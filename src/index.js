@@ -15,7 +15,10 @@ dotenv.config();
 const app = express();
 const allowedOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL]
   .filter(Boolean)
-  .flatMap(url => url.split(",").map(u => u.trim()));
+  .join(",")
+  .split(",")
+  .map(url => url.trim())
+  .filter(Boolean);
 
 app.use(cors({
   origin: allowedOrigins.length ? allowedOrigins : true,
