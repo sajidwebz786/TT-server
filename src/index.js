@@ -9,6 +9,7 @@ import { bookingRouter } from "./routes/bookings.js";
 import { catalogRouter } from "./routes/catalog.js";
 import { transportRouter } from "./routes/transport.js";
 import { supportRouter } from "./routes/support.js";
+import { City } from "./models/index.js";
 
 dotenv.config();
 
@@ -38,4 +39,12 @@ const port = Number(process.env.PORT || 5000);
 
 await sequelize.authenticate();
 await sequelize.sync({ alter: true });
+
+const cityCount = await City.count();
+if (cityCount === 0) {
+  console.log("Database empty, seeding...");
+  const { seedDatabase } = await import("./seed/index.js");
+  await seedDatabase();
+}
+
 app.listen(port, () => console.log(`TravelTimes API running on http://localhost:${port}`));

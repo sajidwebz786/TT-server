@@ -36,9 +36,7 @@ const seatLayout = (rows = 10, cols = 4, sleeper = false) => {
   };
 };
 
-const run = async () => {
-  await sequelize.sync({ force: true });
-
+export const seedDatabase = async () => {
   const indianCities = [
     ["Agra", "Uttar Pradesh"], ["Ahmedabad", "Gujarat"], ["Amritsar", "Punjab"], ["Bengaluru", "Karnataka"],
     ["Bhopal", "Madhya Pradesh"], ["Bhubaneswar", "Odisha"], ["Chandigarh", "Chandigarh"], ["Chennai", "Tamil Nadu"],
@@ -150,10 +148,6 @@ const run = async () => {
   ]);
 
   console.log("TravelTimes database seeded");
-  await sequelize.close();
 };
 
-run().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+export default seedDatabase;
