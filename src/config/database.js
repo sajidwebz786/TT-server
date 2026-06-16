@@ -3,6 +3,8 @@ import { Sequelize } from "sequelize";
 
 dotenv.config();
 
+const useSSL = process.env.DB_HOST?.includes("render.com") || process.env.DB_SSL === "true";
+
 export const sequelize = new Sequelize(
   process.env.DB_NAME || "traveltimesdb",
   process.env.DB_USER || "postgres",
@@ -12,11 +14,6 @@ export const sequelize = new Sequelize(
     port: Number(process.env.DB_PORT || 5432),
     dialect: "postgres",
     logging: false,
-    dialectOptions: {
-      ssl: process.env.DB_HOST?.includes("render.com") || process.env.DB_SSL === "true" ? {
-        require: true,
-        rejectUnauthorized: false
-      } : false
-    }
+    ...(useSSL ? { dialectOptions: { ssl: { require: true, rejectUnauthorized: false } } } : {})
   }
 );

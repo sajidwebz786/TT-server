@@ -13,9 +13,14 @@ import { supportRouter } from "./routes/support.js";
 dotenv.config();
 
 const app = express();
-const origins = [process.env.CLIENT_URL, process.env.ADMIN_URL].filter(Boolean);
+const allowedOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL]
+  .filter(Boolean)
+  .flatMap(url => url.split(",").map(u => u.trim()));
 
-app.use(cors({ origin: origins.length ? origins : true, credentials: true }));
+app.use(cors({
+  origin: allowedOrigins.length ? allowedOrigins : true,
+  credentials: true
+}));
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok", name: "TravelTimes API" }));
