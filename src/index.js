@@ -27,7 +27,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-app.get("/api/health", (_req, res) => res.json({ status: "ok", name: "TravelTimes API" }));
+app.get("/api/health", (_req, res) => res.json({ status: "ok", name: "Orbita Travels API" }));
 app.use("/api/auth", authRouter);
 app.use("/api/catalog", catalogRouter);
 app.use("/api/transport", transportRouter);
@@ -47,4 +47,4 @@ if (cityCount === 0) {
   await seedDatabase();
 }
 
-app.listen(port, () => console.log(`TravelTimes API running on http://localhost:${port}`));
+app.listen(port, () => console.log(`Orbita Travels API running on http://localhost:${port}`));

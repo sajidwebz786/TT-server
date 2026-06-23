@@ -1,6 +1,7 @@
 import express from "express";
 import { Booking, Hotel, TourPackage, TrackingEvent, TransportRoute, User } from "../models/index.js";
 import { auth } from "../middleware/auth.js";
+import { bookBdsdBus } from "../services/bdsdClient.js";
 
 export const bookingRouter = express.Router();
 
@@ -35,6 +36,20 @@ bookingRouter.post("/", auth, async (req, res) => {
       etaMinutes: 0,
       speedKmph: 0
     });
+  }
+
+  if (type === "bus") {
+    const route = await TransportRoute.findByPk(itemId);
+    if (route?.externalProvider === "bdsd") {
+      try {
+        const providerBooking = await bookBdsdBus(route, { passengers, selectedSeats, contact, travelDate, totalAmount, metadata });
+        if (providerBooking) {
+          await booking.update({ metadata: { ...booking.metadata, bdsdBooking: providerBooking } });
+        }
+      } catch (error) {
+        await booking.update({ metadata: { ...booking.metadata, bdsdBookingError: error.message } });
+      }
+    }
   }
 
   const earnedPoints = Math.max(25, Math.floor(Number(totalAmount) / 100));

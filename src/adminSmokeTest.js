@@ -12,7 +12,7 @@ async function request(path, options = {}) {
 
 const admin = await request("/auth/login", {
   method: "POST",
-  body: JSON.stringify({ email: "admin@traveltimes.com", password: "admin123" })
+  body: JSON.stringify({ email: "admin@orbitatravels.com", password: "admin123" })
 });
 
 const headers = { Authorization: `Bearer ${admin.token}` };

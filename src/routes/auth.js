@@ -1,8 +1,10 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { User } from "../models/index.js";
 import { auth } from "../middleware/auth.js";
+import { buildResetLink, sendPasswordResetEmail } from "../utils/mailer.js";
 
 export const authRouter = express.Router();
 
@@ -54,6 +56,49 @@ authRouter.post("/oauth", async (req, res) => {
     await user.update({ authProvider: safeProvider, providerId: providerId || email, phone: phone || user.phone });
   }
   res.json({ token: issueToken(user), user: userView(user) });
+});
+
+authRouter.post("/forgot-password", async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ message: "Email address is required" });
+
+  const user = await User.findOne({ where: { email } });
+  if (!user) {
+    return res.json({ message: "If an account exists for this email, password reset instructions will be sent." });
+  }
+
+  const token = crypto.randomBytes(32).toString("hex");
+  await user.update({
+    resetPasswordToken: token,
+    resetPasswordExpiresAt: new Date(Date.now() + 60 * 60 * 1000)
+  });
+
+  const resetLink = buildResetLink(token);
+  const mail = await sendPasswordResetEmail({ to: user.email, name: user.name, resetLink });
+  res.json({
+    message: "If an account exists for this email, password reset instructions will be sent.",
+    resetLink: process.env.NODE_ENV === "production" ? undefined : mail.preview?.resetLink
+  });
+});
+
+authRouter.post("/reset-password", async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ message: "Reset token and new password are required" });
+  if (String(password).length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
+
+  const user = await User.findOne({ where: { resetPasswordToken: token } });
+  if (!user || !user.resetPasswordExpiresAt || new Date(user.resetPasswordExpiresAt).getTime() < Date.now()) {
+    return res.status(400).json({ message: "Reset link is invalid or expired" });
+  }
+
+  await user.update({
+    passwordHash: await bcrypt.hash(password, 10),
+    resetPasswordToken: null,
+    resetPasswordExpiresAt: null,
+    authProvider: user.authProvider || "email"
+  });
+
+  res.json({ token: issueToken(user), user: userView(user), message: "Password updated successfully" });
 });
 
 authRouter.get("/me", auth, (req, res) => {

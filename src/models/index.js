@@ -10,6 +10,8 @@ export const User = sequelize.define("User", {
   authProvider: { type: DataTypes.STRING, defaultValue: "email" },
   providerId: DataTypes.STRING,
   rewardPoints: { type: DataTypes.INTEGER, defaultValue: 0 },
+  resetPasswordToken: DataTypes.STRING,
+  resetPasswordExpiresAt: DataTypes.DATE,
   role: { type: DataTypes.ENUM("customer", "admin"), defaultValue: "customer" },
   status: { type: DataTypes.ENUM("active", "blocked"), defaultValue: "active" }
 });
@@ -56,7 +58,10 @@ export const Hotel = sequelize.define("Hotel", {
   imageUrl: DataTypes.TEXT,
   amenities: { type: DataTypes.ARRAY(DataTypes.STRING), defaultValue: [] },
   roomTypes: { type: DataTypes.JSONB, defaultValue: [] },
-  rating: { type: DataTypes.FLOAT, defaultValue: 4.6 }
+  rating: { type: DataTypes.FLOAT, defaultValue: 4.6 },
+  externalProvider: DataTypes.STRING,
+  externalHotelCode: DataTypes.STRING,
+  externalPayload: { type: DataTypes.JSONB, defaultValue: {} }
 });
 
 export const TransportRoute = sequelize.define("TransportRoute", {
@@ -73,6 +78,9 @@ export const TransportRoute = sequelize.define("TransportRoute", {
   amenities: { type: DataTypes.ARRAY(DataTypes.STRING), defaultValue: [] },
   seatLayout: { type: DataTypes.JSONB, defaultValue: {} },
   baggage: DataTypes.STRING,
+  externalProvider: DataTypes.STRING,
+  externalRouteId: DataTypes.STRING,
+  externalPayload: { type: DataTypes.JSONB, defaultValue: {} },
   rating: { type: DataTypes.FLOAT, defaultValue: 4.5 },
   cancellationPolicy: DataTypes.STRING
 });

@@ -93,17 +93,17 @@ export const seedDatabase = async () => {
   const addHours = (h) => new Date(now.getTime() + h * 60 * 60 * 1000);
   const addDays = (d) => { const dt = new Date(now); dt.setDate(dt.getDate() + d); return dt; };
   await TransportRoute.bulkCreate([
-    { type: "bus", providerName: "TravelTimes Prime Bus", routeCode: "BUS-MUM-GOA-01", origin: "Mumbai", destination: "Goa", departureTime: addHours(8), arrivalTime: addHours(20), price: 1499, classType: "AC Sleeper", vehicleType: "Volvo Multi Axle", amenities: ["Live tracking", "Blanket", "Charging"], seatLayout: seatLayout(10, 4, true), cancellationPolicy: "Free cancellation up to 6 hours" },
+    { type: "bus", providerName: "Orbita Travels Prime Bus", routeCode: "BUS-MUM-GOA-01", origin: "Mumbai", destination: "Goa", departureTime: addHours(8), arrivalTime: addHours(20), price: 1499, classType: "AC Sleeper", vehicleType: "Volvo Multi Axle", amenities: ["Live tracking", "Blanket", "Charging"], seatLayout: seatLayout(10, 4, true), cancellationPolicy: "Free cancellation up to 6 hours" },
     { type: "bus", providerName: "BlueLine Express", routeCode: "BUS-MUM-GOA-02", origin: "Mumbai", destination: "Goa", departureTime: addHours(10), arrivalTime: addHours(22), price: 999, classType: "AC Seater", vehicleType: "Premium Coach", amenities: ["Water bottle", "Charging"], seatLayout: seatLayout(11, 4, false), cancellationPolicy: "Partial refund" },
-    { type: "flight", providerName: "TravelTimes Air", routeCode: "FLT-DEL-GOA-01", origin: "Delhi", destination: "Goa", departureTime: addHours(6), arrivalTime: addHours(8.5), price: 6299, classType: "Economy", vehicleType: "A320", amenities: ["Cabin baggage", "Meal add-on"], baggage: "15kg check-in + 7kg cabin", seatLayout: seatLayout(18, 4, false), cancellationPolicy: "Airline rules apply" },
+    { type: "flight", providerName: "Orbita Travels Air", routeCode: "FLT-DEL-GOA-01", origin: "Delhi", destination: "Goa", departureTime: addHours(6), arrivalTime: addHours(8.5), price: 6299, classType: "Economy", vehicleType: "A320", amenities: ["Cabin baggage", "Meal add-on"], baggage: "15kg check-in + 7kg cabin", seatLayout: seatLayout(18, 4, false), cancellationPolicy: "Airline rules apply" },
     { type: "flight", providerName: "SkyVista", routeCode: "FLT-BLR-KER-01", origin: "Bengaluru", destination: "Kerala", departureTime: addHours(5), arrivalTime: addHours(6.2), price: 4299, classType: "Premium Economy", vehicleType: "B737", amenities: ["Priority boarding", "Extra legroom"], baggage: "20kg check-in + 7kg cabin", seatLayout: seatLayout(16, 4, false), cancellationPolicy: "Refundable fare" },
     { type: "train", providerName: "Konkan Heritage", routeCode: "TRN-MUM-GOA-01", origin: "Mumbai", destination: "Goa", departureTime: addHours(12), arrivalTime: addHours(24), price: 1299, classType: "3AC", vehicleType: "Express", amenities: ["Pantry", "Bedding", "Window seats"], seatLayout: seatLayout(12, 4, true), cancellationPolicy: "Railway rules apply" },
     { type: "train", providerName: "Northern Crown", routeCode: "TRN-DEL-KAS-01", origin: "Delhi", destination: "Kashmir", departureTime: addHours(15), arrivalTime: addHours(33), price: 2199, classType: "2AC", vehicleType: "Superfast", amenities: ["Bedding", "Meals", "Reading light"], seatLayout: seatLayout(10, 4, true), cancellationPolicy: "Railway rules apply" }
   ]);
 
   const users = await User.bulkCreate([
-    { name: "Admin", email: "admin@traveltimes.com", phone: "9999999999", passwordHash: "admin123", role: "admin" },
-    { name: "Demo Customer", email: "customer@traveltimes.com", phone: "8888888888", passwordHash: "customer123", role: "customer" }
+    { name: "Admin", email: "admin@orbitatravels.com", phone: "9999999999", passwordHash: "admin123", role: "admin" },
+    { name: "Demo Customer", email: "customer@orbitatravels.com", phone: "8888888888", passwordHash: "customer123", role: "customer" }
   ], { individualHooks: true });
 
   const demo = users.find((user) => user.role === "customer");
@@ -147,7 +147,7 @@ export const seedDatabase = async () => {
     { UserId: demo.id, BookingId: booking.id, sender: "assistant", message: "Your boarding point is Mumbai Central. Please arrive 20 minutes before departure.", intent: "boarding" }
   ]);
 
-  console.log("TravelTimes database seeded");
+  console.log("Orbita Travels database seeded");
 };
 
 export default seedDatabase;
