@@ -231,16 +231,19 @@ function normalizeAmenities(value) {
 
 function normalizeSeatLayout(item) {
   const typeText = `${item.SeatType || item.LayoutType || item.BusType || item.ServiceType || ""}`.toLowerCase();
-  const type = typeText.includes("sleeper") && (typeText.includes("seat") || typeText.includes("sitting"))
+  let type = typeText.includes("sleeper") && (typeText.includes("seat") || typeText.includes("sitting"))
     ? "mixed"
     : typeText.includes("sleeper")
       ? (typeText.includes("semi") ? "semi-sleeper" : "sleeper")
       : typeText.includes("semi")
         ? "semi-seater"
         : "seater";
-  const rawSeats = item.Seats || item.SeatLayout || item.seats || [];
+  const rawSource = item.Seats || item.SeatLayout || item.SeatDetails || item.SeatsDetails || item.SeatLayoutDetails || item.seats || [];
+  const rawSeats = Array.isArray(rawSource)
+    ? flattenObjects(rawSource)
+    : flattenObjects(firstArray(rawSource, ["Seats", "SeatLayout", "SeatDetails", "SeatsDetails", "SeatLayoutDetails", "data"]));
   const unavailable = [];
-  const seats = Array.isArray(rawSeats) ? rawSeats.map((seat, index) => {
+  const seats = rawSeats.map((seat, index) => {
     const id = String(seat.SeatName || seat.SeatNo || seat.SeatNumber || seat.id || index + 1);
     const statusText = String(seat.SeatStatus ?? seat.Status ?? "").toLowerCase();
     const available = booleanValue(seat.Available, seat.IsAvailable, seat.IsSeatAvailable);
@@ -268,7 +271,12 @@ function normalizeSeatLayout(item) {
       males: Boolean(booleanValue(seat.IsMalesSeat, seat.MalesSeat, seat.ForMales) || false),
       rawType: seat.SeatType || seat.Type || seat.BerthType || ""
     };
-  }) : [];
+  });
+  const hasBerths = seats.some((seat) => seat.isBerth);
+  const hasChairs = seats.some((seat) => !seat.isBerth);
+  const hasUpper = seats.some((seat) => seat.deck === "upper");
+  if (hasBerths && hasChairs) type = "mixed";
+  else if (hasBerths || hasUpper) type = "sleeper";
   return { type, unavailable, seats };
 }
 
@@ -421,7 +429,7 @@ export async function getBdsdBusSeatLayout(route) {
     SearchTokenId: token,
     ResultIndex: resultIndex
   });
-  return normalizeSeatLayout({ ...data, SeatLayout: firstArray(data, ["Seats", "SeatLayout", "SeatDetails", "data"]) });
+  return normalizeSeatLayout({ ...data, SeatLayout: firstArray(data, ["Seats", "SeatLayout", "SeatDetails", "SeatsDetails", "SeatLayoutDetails", "data"]) });
 }
 
 export async function getBdsdBusBoardingPoints(route) {
