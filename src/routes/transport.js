@@ -20,9 +20,7 @@ transportRouter.get("/:type/search", async (req, res) => {
   if (type === "bus" && req.query.from && req.query.to) {
     const externalRoutes = await tryExternalSearch(() => searchBdsdBuses({ from: req.query.from, to: req.query.to, date: req.query.date }));
     if (externalRoutes.length) {
-      await upsertExternalRoutes(externalRoutes);
-      routes = await TransportRoute.findAll({ where, order: [["price", "ASC"]] });
-      return res.json(routes);
+      return res.json(await upsertExternalRoutes(externalRoutes));
     }
     await ensureRouteOptions(type, req.query.from, req.query.to, busOptionsForRoute(req.query.from, req.query.to));
     routes = await TransportRoute.findAll({ where, order: [["price", "ASC"]] });
@@ -30,9 +28,7 @@ transportRouter.get("/:type/search", async (req, res) => {
   if (type === "flight" && req.query.from && req.query.to) {
     const externalRoutes = await tryExternalSearch(() => searchBdsdFlights({ from: req.query.from, to: req.query.to, date: req.query.date, tripType: req.query.tripType, travellers: req.query.travellers }));
     if (externalRoutes.length) {
-      await upsertExternalRoutes(externalRoutes);
-      routes = await TransportRoute.findAll({ where, order: [["price", "ASC"]] });
-      return res.json(routes);
+      return res.json(await upsertExternalRoutes(externalRoutes));
     }
   }
   if (!routes.length && req.query.from && req.query.to) {
@@ -127,13 +123,14 @@ const busOptionsForRoute = (from, to) => {
 };
 
 const upsertExternalRoutes = async (routes) => {
-  await Promise.all(routes.map(async (route) => {
+  const records = await Promise.all(routes.map(async (route) => {
     const [record, created] = await TransportRoute.findOrCreate({
       where: { routeCode: route.routeCode },
       defaults: route
     });
-    if (!created) await record.update(route);
+    return created ? record : record.update(route);
   }));
+  return records.sort((a, b) => Number(a.price) - Number(b.price));
 };
 
 const tryExternalSearch = async (searchFn) => {

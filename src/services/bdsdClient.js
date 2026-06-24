@@ -65,18 +65,28 @@ function headers() {
 
 async function request(path, body) {
   if (!enabled()) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.BDSD_TIMEOUT_MS || 20000));
   const response = await fetch(`${baseUrl()}${path}`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: controller.signal
+  }).catch((error) => {
+    if (error.name === "AbortError") throw new Error(`BDSD request timed out for ${path}`);
+    throw error;
   });
-  const text = await response.text();
-  const data = text ? tryJson(text) : {};
-  if (!response.ok || data?.Error?.ErrorCode) {
-    const message = data?.Error?.ErrorMessage || data?.message || `BDSD request failed with ${response.status}`;
-    throw new Error(message);
+  try {
+    const text = await response.text();
+    const data = text ? tryJson(text) : {};
+    if (!response.ok || data?.Error?.ErrorCode) {
+      const message = data?.Error?.ErrorMessage || data?.message || `BDSD request failed with ${response.status}`;
+      throw new Error(message);
+    }
+    return data;
+  } finally {
+    clearTimeout(timeout);
   }
-  return data;
 }
 
 function tryJson(text) {
@@ -119,7 +129,13 @@ function asDate(value, fallback) {
 
 function fareValue(value) {
   if (typeof value === "number" || typeof value === "string") return Number(value) || 0;
-  return Number(value?.PublishedFare || value?.OfferedFare || value?.BaseFare || value?.TotalFare || value?.Fare || 0);
+  if (Array.isArray(value)) return value.reduce((max, item) => Math.max(max, fareValue(item)), 0);
+  if (!value || typeof value !== "object") return 0;
+  for (const key of ["PublishedFare", "OfferedFare", "BaseFare", "TotalFare", "PublishedPrice", "OfferedPrice", "BasePrice", "MinPublishedPrice", "MinHotelPrice", "Price"]) {
+    const amount = Number(value[key]);
+    if (Number.isFinite(amount) && amount > 0) return amount;
+  }
+  return Math.max(fareValue(value.Fare), fareValue(value.FareList));
 }
 
 function normalizeBusRoute(item, query, token) {
@@ -195,10 +211,11 @@ function normalizeDroppingPoints(data) {
 }
 
 function normalizeFlightRoute(item, query, token) {
-  const segment = item.Segments?.[0]?.[0] || item.Segments?.[0] || item.Segment || {};
+  const segment = firstObject(item.Segments) || item.Segment || {};
   const airline = segment.Airline || item.Airline || {};
-  const fare = fareValue(item.Fare || item.Price || item);
-  const resultIndex = item.ResultIndex || item.resultIndex || item.id;
+  const fare = fareValue(item.FareList || item.Fare || item.Price || item);
+  const fareItem = firstObject(item.FareList) || {};
+  const resultIndex = item.ResultIndex || item.resultIndex || item.id || fareItem.FareId;
   return {
     type: "flight",
     providerName: airline.AirlineName || item.AirlineName || item.providerName || "BDSD Flight",
@@ -208,7 +225,7 @@ function normalizeFlightRoute(item, query, token) {
     departureTime: asDate(segment.Origin?.DepTime || segment.DepTime || item.DepartureTime, `${query.date}T08:00:00`),
     arrivalTime: asDate(segment.Destination?.ArrTime || segment.ArrTime || item.ArrivalTime, `${query.date}T10:00:00`),
     price: fare || 0,
-    classType: item.CabinClassName || "Economy",
+    classType: item.CabinClassName || fareItem.CabinClass || "Economy",
     vehicleType: airline.FlightNumber ? `${airline.AirlineCode || ""} ${airline.FlightNumber}`.trim() : "Flight",
     amenities: ["Cabin baggage", "Web check-in"],
     seatLayout: { type: "seater", unavailable: [], seats: [] },
@@ -219,6 +236,23 @@ function normalizeFlightRoute(item, query, token) {
     externalRouteId: String(resultIndex || ""),
     externalPayload: { ...item, SearchTokenId: token }
   };
+}
+
+function firstObject(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = firstObject(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  return typeof value === "object" ? value : null;
+}
+
+function flattenObjects(value) {
+  if (!Array.isArray(value)) return value && typeof value === "object" ? [value] : [];
+  return value.flatMap((item) => Array.isArray(item) ? flattenObjects(item) : (item && typeof item === "object" ? [item] : []));
 }
 
 function normalizeHotel(item, query, token) {
@@ -271,7 +305,7 @@ export async function searchBdsdFlights(query) {
     AirSegments: [{ Origin: origin, Destination: destination, PreferredTime: `${query.date}T00:00:00` }]
   });
   const token = findValue(data, ["SearchTokenId", "TraceId", "TokenId"]);
-  return firstArray(data, ["Results", "Result", "FlightResults", "data"]).map((item) => normalizeFlightRoute(item, query, token));
+  return flattenObjects(firstArray(data, ["Results", "Result", "FlightResults", "data"])).map((item) => normalizeFlightRoute(item, query, token));
 }
 
 export async function searchBdsdHotels(query) {

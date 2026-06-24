@@ -41,24 +41,39 @@ catalogRouter.get("/hotels", async (req, res) => {
         adults: req.query.adults || 2
       });
       if (externalHotels.length) {
-        await upsertExternalHotels(externalHotels);
-        return res.json(await Hotel.findAll({ where, include: Destination, order: [["rating", "DESC"]] }));
+        return res.json(await upsertExternalHotels(externalHotels));
       }
     } catch (error) {
       console.warn(`BDSD hotel search unavailable: ${error.message}`);
+    }
+  } else {
+    try {
+      const liveHotels = (await Promise.all(["Goa", "Mumbai", "Delhi"].map((city) => searchBdsdHotels({
+        city,
+        checkInDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        checkOutDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        noOfNights: 1,
+        rooms: 1,
+        adults: 2,
+        resultCount: 10
+      }).catch(() => [])))).flat();
+      if (liveHotels.length) return res.json(await upsertExternalHotels(liveHotels));
+    } catch (error) {
+      console.warn(`BDSD hotel catalog unavailable: ${error.message}`);
     }
   }
   res.json(await Hotel.findAll({ where, include: Destination, order: [["rating", "DESC"]] }));
 });
 
 const upsertExternalHotels = async (hotels) => {
-  await Promise.all(hotels.map(async (hotel) => {
+  const records = await Promise.all(hotels.map(async (hotel) => {
     const [record, created] = await Hotel.findOrCreate({
       where: { externalProvider: "bdsd", externalHotelCode: hotel.externalHotelCode },
       defaults: hotel
     });
-    if (!created) await record.update(hotel);
+    return created ? record : record.update(hotel);
   }));
+  return records.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
 };
 
 const enrichCities = (cities) => {
