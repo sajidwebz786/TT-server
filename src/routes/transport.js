@@ -36,7 +36,7 @@ transportRouter.get("/:type/:id/seats", async (req, res) => {
       return res.json(layout);
     }
   }
-  res.status(404).json({ message: "Live BDSD seat layout is not available for this route" });
+  res.status(404).json({ message: "Seat layout is not available for this route" });
 });
 
 transportRouter.get("/:type/:id/points", async (req, res) => {
@@ -46,7 +46,7 @@ transportRouter.get("/:type/:id/points", async (req, res) => {
     const points = await tryExternalDetail(() => getBdsdBusBoardingPoints(route));
     if (points) return res.json(points);
   }
-  res.status(404).json({ message: "Live BDSD boarding points are not available for this route" });
+  res.status(404).json({ message: "Boarding points are not available for this route" });
 });
 
 const upsertExternalRoutes = async (routes) => {
