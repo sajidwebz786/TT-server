@@ -55,6 +55,47 @@ function bdsdBusCityIds() {
   return parseMap("BDSD_BUS_CITY_IDS", defaultBusCityIds);
 }
 
+function bdsdAirportCodes() {
+  return parseMap("BDSD_AIRPORT_CODES", defaultAirportCodes);
+}
+
+function bdsdHotelCityIds() {
+  return parseMap("BDSD_HOTEL_CITY_IDS", defaultHotelCityIds);
+}
+
+function providerCities() {
+  const byName = new Map();
+  const add = (name, fields) => {
+    const current = byName.get(name) || {
+      id: name,
+      name,
+      state: "",
+      country: "India",
+      isInternational: false,
+      transportModes: [],
+      externalProvider: "bdsd",
+      hasLiveBusSearch: false,
+      hasLiveFlightSearch: false,
+      hasLiveHotelSearch: false
+    };
+    const transportModes = new Set(current.transportModes);
+    for (const mode of fields.transportModes || []) transportModes.add(mode);
+    byName.set(name, { ...current, ...fields, transportModes: [...transportModes] });
+  };
+
+  for (const [name, externalBusCityId] of Object.entries(bdsdBusCityIds())) {
+    add(name, { externalBusCityId: String(externalBusCityId), hasLiveBusSearch: true, transportModes: ["bus"] });
+  }
+  for (const [name, airportCode] of Object.entries(bdsdAirportCodes())) {
+    add(name, { airportCode: String(airportCode), hasLiveFlightSearch: true, transportModes: ["flight"] });
+  }
+  for (const [name, externalHotelCityId] of Object.entries(bdsdHotelCityIds())) {
+    add(name, { externalHotelCityId: String(externalHotelCityId), hasLiveHotelSearch: true, transportModes: ["hotel"] });
+  }
+
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function headers() {
   return {
     "Content-Type": "application/json",
@@ -191,22 +232,22 @@ function normalizeSeatLayout(item) {
 }
 
 function normalizeBoardingPoints(data) {
-  const points = firstArray(data, ["BoardingPoints", "BoardingPoint", "Boarding", "Pickups", "data"]);
+  const points = firstArray(data, ["BoardingPointsDetails", "BoardingPoints", "BoardingPoint", "Boarding", "Pickups", "data"]);
   return points.map((point, index) => ({
-    id: point.BoardingPointId || point.CityPointId || point.PointId || point.id || index + 1,
-    name: point.BoardingPointName || point.Name || point.Location || point.name || `Boarding point ${index + 1}`,
+    id: point.BoardingPointId || point.CityPointId || point.CityPointIndex || point.PointId || point.id || index + 1,
+    name: point.BoardingPointName || point.CityPointName || point.Name || point.Location || point.name || `Boarding point ${index + 1}`,
     time: point.CityPointTime || point.Time || point.time || "",
-    address: point.Address || point.address || ""
+    address: point.Address || point.CityPointLocation || point.address || ""
   }));
 }
 
 function normalizeDroppingPoints(data) {
-  const points = firstArray(data, ["DroppingPoints", "DroppingPoint", "Dropping", "Drops", "data"]);
+  const points = firstArray(data, ["DroppingPointsDetails", "DroppingPoints", "DroppingPoint", "Dropping", "Drops", "data"]);
   return points.map((point, index) => ({
-    id: point.DroppingPointId || point.CityPointId || point.PointId || point.id || index + 1,
-    name: point.DroppingPointName || point.Name || point.Location || point.name || `Dropping point ${index + 1}`,
+    id: point.DroppingPointId || point.CityPointId || point.CityPointIndex || point.PointId || point.id || index + 1,
+    name: point.DroppingPointName || point.CityPointName || point.Name || point.Location || point.name || `Dropping point ${index + 1}`,
     time: point.CityPointTime || point.Time || point.time || "",
-    address: point.Address || point.address || ""
+    address: point.Address || point.CityPointLocation || point.address || ""
   }));
 }
 
@@ -288,7 +329,7 @@ export async function searchBdsdBuses(query) {
 }
 
 export async function searchBdsdFlights(query) {
-  const airportCodes = parseMap("BDSD_AIRPORT_CODES", defaultAirportCodes);
+  const airportCodes = bdsdAirportCodes();
   const origin = airportCodes[query.from];
   const destination = airportCodes[query.to];
   if (!enabled() || !origin || !destination) return [];
@@ -309,7 +350,7 @@ export async function searchBdsdFlights(query) {
 }
 
 export async function searchBdsdHotels(query) {
-  const hotelCityIds = parseMap("BDSD_HOTEL_CITY_IDS", defaultHotelCityIds);
+  const hotelCityIds = bdsdHotelCityIds();
   const destinationCityId = hotelCityIds[query.city];
   if (!enabled() || !destinationCityId) return [];
   const data = await request(process.env.BDSD_HOTEL_SEARCH_PATH || "/hotelservice/rest/search", {
@@ -347,7 +388,13 @@ export async function getBdsdBusBoardingPoints(route) {
   const resultIndex = route.externalPayload?.ResultIndex || route.externalRouteId;
   if (!enabled() || !token || !resultIndex) return null;
   const body = { UserIp: userIp(), SearchTokenId: token, ResultIndex: resultIndex };
-  const boarding = await request(process.env.BDSD_BUS_BOARDING_PATH || "/busservice/rest/boardingpoint", body);
+  let boarding;
+  try {
+    boarding = await request(process.env.BDSD_BUS_BOARDING_PATH || "/busservice/rest/boardingpoint", body);
+  } catch (error) {
+    if (!route.externalPayload?.BoardingPointsDetails?.length && !route.externalPayload?.DroppingPointsDetails?.length) throw error;
+    boarding = route.externalPayload;
+  }
   return {
     boardingPoints: normalizeBoardingPoints(boarding),
     droppingPoints: normalizeDroppingPoints(boarding)
@@ -392,6 +439,9 @@ export const bdsdClient = {
   enabled,
   configured,
   busCityIds: bdsdBusCityIds,
+  airportCodes: bdsdAirportCodes,
+  hotelCityIds: bdsdHotelCityIds,
+  providerCities,
   searchBdsdBuses,
   searchBdsdFlights,
   searchBdsdHotels,

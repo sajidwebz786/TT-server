@@ -1,6 +1,5 @@
 import express from "express";
-import { Op } from "sequelize";
-import { City, Destination, Hotel, TourPackage } from "../models/index.js";
+import { Destination, Hotel, TourPackage } from "../models/index.js";
 import { bdsdClient, searchBdsdHotels } from "../services/bdsdClient.js";
 
 export const catalogRouter = express.Router();
@@ -10,17 +9,13 @@ catalogRouter.get("/destinations", async (_req, res) => {
 });
 
 catalogRouter.get("/cities", async (req, res) => {
-  const where = req.query.international === "true" ? { isInternational: true } : { isInternational: false };
-  res.json(enrichCities(await City.findAll({ where, order: [["name", "ASC"]] })));
+  res.json(filterProviderCities(req.query));
 });
 
 catalogRouter.get("/cities/search", async (req, res) => {
   const query = String(req.query.q || "").trim();
-  const where = {
-    ...(req.query.international === "true" ? { isInternational: true } : { isInternational: false }),
-    ...(query ? { name: { [Op.iLike]: `%${query}%` } } : {})
-  };
-  res.json(enrichCities(await City.findAll({ where, order: [["name", "ASC"]], limit: Number(req.query.limit || 25) })));
+  const limit = Number(req.query.limit || 25);
+  res.json(filterProviderCities(req.query).filter((city) => !query || city.name.toLowerCase().includes(query.toLowerCase())).slice(0, limit));
 });
 
 catalogRouter.get("/packages", async (req, res) => {
@@ -29,7 +24,6 @@ catalogRouter.get("/packages", async (req, res) => {
 });
 
 catalogRouter.get("/hotels", async (req, res) => {
-  const where = req.query.city ? { city: req.query.city } : {};
   if (req.query.city) {
     try {
       const externalHotels = await searchBdsdHotels({
@@ -45,6 +39,7 @@ catalogRouter.get("/hotels", async (req, res) => {
       }
     } catch (error) {
       console.warn(`BDSD hotel search unavailable: ${error.message}`);
+      return res.json([]);
     }
   } else {
     try {
@@ -60,9 +55,10 @@ catalogRouter.get("/hotels", async (req, res) => {
       if (liveHotels.length) return res.json(await upsertExternalHotels(liveHotels));
     } catch (error) {
       console.warn(`BDSD hotel catalog unavailable: ${error.message}`);
+      return res.json([]);
     }
   }
-  res.json(await Hotel.findAll({ where, include: Destination, order: [["rating", "DESC"]] }));
+  res.json([]);
 });
 
 const upsertExternalHotels = async (hotels) => {
@@ -76,16 +72,12 @@ const upsertExternalHotels = async (hotels) => {
   return records.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
 };
 
-const enrichCities = (cities) => {
-  const busCityIds = bdsdClient.busCityIds();
-  return cities.map((city) => {
-    const json = city.toJSON();
-    const externalBusCityId = json.externalBusCityId || busCityIds[json.name] || null;
-    return {
-      ...json,
-      externalProvider: externalBusCityId ? "bdsd" : json.externalProvider,
-      externalBusCityId,
-      hasLiveBusSearch: Boolean(externalBusCityId)
-    };
+const filterProviderCities = (query) => {
+  const mode = query.mode || query.transportMode || null;
+  return bdsdClient.providerCities().filter((city) => {
+    if (query.international === "true" && !city.isInternational) return false;
+    if (query.international !== "true" && city.isInternational) return false;
+    if (mode && !city.transportModes.includes(mode)) return false;
+    return true;
   });
 };
