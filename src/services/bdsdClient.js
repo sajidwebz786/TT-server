@@ -251,6 +251,8 @@ function normalizeSeatLayout(item) {
     const blockedByStatus = ["false", "booked", "blocked", "sold", "unavailable"].includes(statusText);
     if (available === false || booked || blockedByStatus) unavailable.push(id);
     const seatType = `${seat.SeatType || seat.Type || seat.BerthType || ""}`.toLowerCase();
+    const seatTextSaysBerth = seatType.includes("sleeper") || seatType.includes("berth");
+    const layoutSaysBerth = typeText.includes("sleeper") || typeText.includes("berth");
     const width = numericValue(seat.Width, seat.SeatWidth, seat.w, 1) || 1;
     const height = numericValue(seat.Height, seat.SeatHeight, seat.h, seatType.includes("sleeper") || seatType.includes("berth") ? 2 : 1) || 1;
     const isUpper = booleanValue(seat.IsUpper, seat.Upper, seat.IsUpperDeck);
@@ -266,7 +268,7 @@ function normalizeSeatLayout(item) {
       fare: fareValue(seat.Price || seat.Fare || seat.SeatFare || seat),
       fareMultiplier: 1,
       isWalkway: Boolean(seat.isWalkway || seat.IsWalkway),
-      isBerth: seatType.includes("sleeper") || seatType.includes("berth") || height > 1,
+      isBerth: seatTextSaysBerth || (layoutSaysBerth && height > 1),
       ladies: Boolean(booleanValue(seat.IsLadiesSeat, seat.LadiesSeat, seat.IsLadies, seat.ForLadies) || false),
       males: Boolean(booleanValue(seat.IsMalesSeat, seat.MalesSeat, seat.ForMales) || false),
       rawType: seat.SeatType || seat.Type || seat.BerthType || ""
@@ -274,9 +276,8 @@ function normalizeSeatLayout(item) {
   });
   const hasBerths = seats.some((seat) => seat.isBerth);
   const hasChairs = seats.some((seat) => !seat.isBerth);
-  const hasUpper = seats.some((seat) => seat.deck === "upper");
   if (hasBerths && hasChairs) type = "mixed";
-  else if (hasBerths || hasUpper) type = "sleeper";
+  else if (hasBerths) type = "sleeper";
   return { type, unavailable, seats };
 }
 
@@ -429,7 +430,7 @@ export async function getBdsdBusSeatLayout(route) {
     SearchTokenId: token,
     ResultIndex: resultIndex
   });
-  return normalizeSeatLayout({ ...data, SeatLayout: firstArray(data, ["Seats", "SeatLayout", "SeatDetails", "SeatsDetails", "SeatLayoutDetails", "data"]) });
+  return normalizeSeatLayout({ ...data, BusType: route.classType, SeatLayout: firstArray(data, ["Seats", "SeatLayout", "SeatDetails", "SeatsDetails", "SeatLayoutDetails", "data"]) });
 }
 
 export async function getBdsdBusBoardingPoints(route) {
