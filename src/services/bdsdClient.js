@@ -51,6 +51,10 @@ function parseMap(envName, fallback) {
   }
 }
 
+function bdsdBusCityIds() {
+  return parseMap("BDSD_BUS_CITY_IDS", defaultBusCityIds);
+}
+
 function headers() {
   return {
     "Content-Type": "application/json",
@@ -173,7 +177,7 @@ function normalizeSeatLayout(item) {
 function normalizeBoardingPoints(data) {
   const points = firstArray(data, ["BoardingPoints", "BoardingPoint", "Boarding", "Pickups", "data"]);
   return points.map((point, index) => ({
-    id: point.BoardingPointId || point.PointId || point.id || index + 1,
+    id: point.BoardingPointId || point.CityPointId || point.PointId || point.id || index + 1,
     name: point.BoardingPointName || point.Name || point.Location || point.name || `Boarding point ${index + 1}`,
     time: point.CityPointTime || point.Time || point.time || "",
     address: point.Address || point.address || ""
@@ -183,7 +187,7 @@ function normalizeBoardingPoints(data) {
 function normalizeDroppingPoints(data) {
   const points = firstArray(data, ["DroppingPoints", "DroppingPoint", "Dropping", "Drops", "data"]);
   return points.map((point, index) => ({
-    id: point.DroppingPointId || point.PointId || point.id || index + 1,
+    id: point.DroppingPointId || point.CityPointId || point.PointId || point.id || index + 1,
     name: point.DroppingPointName || point.Name || point.Location || point.name || `Dropping point ${index + 1}`,
     time: point.CityPointTime || point.Time || point.time || "",
     address: point.Address || point.address || ""
@@ -235,7 +239,7 @@ function normalizeHotel(item, query, token) {
 }
 
 export async function searchBdsdBuses(query) {
-  const cityIds = parseMap("BDSD_BUS_CITY_IDS", defaultBusCityIds);
+  const cityIds = bdsdBusCityIds();
   const originId = cityIds[query.from];
   const destinationId = cityIds[query.to];
   if (!enabled() || !originId || !destinationId) return [];
@@ -336,19 +340,24 @@ export async function bookBdsdBus(route, bookingDraft) {
     Age: String(lead.age || ""),
     SeatName: bookingDraft.selectedSeats?.[0] || lead.seat || ""
   };
-  return request(process.env.BDSD_BUS_BOOK_PATH || "/busservice/rest/book", {
+  const body = {
     UserIp: userIp(),
     SearchTokenId: token,
     ResultIndex: resultIndex,
     BoardingPointId: bookingDraft.metadata?.boardingPointId || 1,
     DroppingPointId: bookingDraft.metadata?.dropPointId || 1,
     Passenger: [passenger]
-  });
+  };
+  if (process.env.BDSD_BUS_BLOCK_BEFORE_BOOK === "true") {
+    await request(process.env.BDSD_BUS_BLOCK_SEAT_PATH || "/busservice/rest/blockseat", body);
+  }
+  return request(process.env.BDSD_BUS_BOOK_PATH || "/busservice/rest/book", body);
 }
 
 export const bdsdClient = {
   enabled,
   configured,
+  busCityIds: bdsdBusCityIds,
   searchBdsdBuses,
   searchBdsdFlights,
   searchBdsdHotels,

@@ -1,6 +1,7 @@
 import express from "express";
+import { Op } from "sequelize";
 import { City, Destination, Hotel, TourPackage } from "../models/index.js";
-import { searchBdsdHotels } from "../services/bdsdClient.js";
+import { bdsdClient, searchBdsdHotels } from "../services/bdsdClient.js";
 
 export const catalogRouter = express.Router();
 
@@ -10,7 +11,16 @@ catalogRouter.get("/destinations", async (_req, res) => {
 
 catalogRouter.get("/cities", async (req, res) => {
   const where = req.query.international === "true" ? { isInternational: true } : { isInternational: false };
-  res.json(await City.findAll({ where, order: [["name", "ASC"]] }));
+  res.json(enrichCities(await City.findAll({ where, order: [["name", "ASC"]] })));
+});
+
+catalogRouter.get("/cities/search", async (req, res) => {
+  const query = String(req.query.q || "").trim();
+  const where = {
+    ...(req.query.international === "true" ? { isInternational: true } : { isInternational: false }),
+    ...(query ? { name: { [Op.iLike]: `%${query}%` } } : {})
+  };
+  res.json(enrichCities(await City.findAll({ where, order: [["name", "ASC"]], limit: Number(req.query.limit || 25) })));
 });
 
 catalogRouter.get("/packages", async (req, res) => {
@@ -49,4 +59,18 @@ const upsertExternalHotels = async (hotels) => {
     });
     if (!created) await record.update(hotel);
   }));
+};
+
+const enrichCities = (cities) => {
+  const busCityIds = bdsdClient.busCityIds();
+  return cities.map((city) => {
+    const json = city.toJSON();
+    const externalBusCityId = json.externalBusCityId || busCityIds[json.name] || null;
+    return {
+      ...json,
+      externalProvider: externalBusCityId ? "bdsd" : json.externalProvider,
+      externalBusCityId,
+      hasLiveBusSearch: Boolean(externalBusCityId)
+    };
+  });
 };

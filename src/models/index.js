@@ -34,7 +34,10 @@ export const City = sequelize.define("City", {
   state: DataTypes.STRING,
   country: { type: DataTypes.STRING, defaultValue: "India" },
   transportModes: { type: DataTypes.ARRAY(DataTypes.STRING), defaultValue: ["bus", "flight", "train"] },
-  isInternational: { type: DataTypes.BOOLEAN, defaultValue: false }
+  isInternational: { type: DataTypes.BOOLEAN, defaultValue: false },
+  externalProvider: DataTypes.STRING,
+  externalBusCityId: DataTypes.STRING,
+  externalPayload: { type: DataTypes.JSONB, defaultValue: {} }
 });
 
 export const TourPackage = sequelize.define("TourPackage", {
