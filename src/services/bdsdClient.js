@@ -179,6 +179,22 @@ function fareValue(value) {
   return Math.max(fareValue(value.Fare), fareValue(value.FareList));
 }
 
+function numericValue(...values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return undefined;
+}
+
+function booleanValue(...values) {
+  for (const value of values) {
+    if (value === true || value === "true" || value === "True" || value === 1 || value === "1") return true;
+    if (value === false || value === "false" || value === "False" || value === 0 || value === "0") return false;
+  }
+  return undefined;
+}
+
 function normalizeBusRoute(item, query, token) {
   const resultIndex = item.ResultIndex || item.resultIndex || item.TripId || item.ServiceId || item.id;
   const departure = item.DepartureTime || item.departureTime || item.DepTime || item.StartTime;
@@ -215,17 +231,42 @@ function normalizeAmenities(value) {
 
 function normalizeSeatLayout(item) {
   const typeText = `${item.SeatType || item.LayoutType || item.BusType || item.ServiceType || ""}`.toLowerCase();
-  const type = typeText.includes("sleeper") ? (typeText.includes("semi") ? "semi-sleeper" : "sleeper") : typeText.includes("semi") ? "semi-seater" : "seater";
+  const type = typeText.includes("sleeper") && (typeText.includes("seat") || typeText.includes("sitting"))
+    ? "mixed"
+    : typeText.includes("sleeper")
+      ? (typeText.includes("semi") ? "semi-sleeper" : "sleeper")
+      : typeText.includes("semi")
+        ? "semi-seater"
+        : "seater";
   const rawSeats = item.Seats || item.SeatLayout || item.seats || [];
   const unavailable = [];
   const seats = Array.isArray(rawSeats) ? rawSeats.map((seat, index) => {
     const id = String(seat.SeatName || seat.SeatNo || seat.SeatNumber || seat.id || index + 1);
-    if (seat.SeatStatus === false || seat.Available === false || seat.IsBooked) unavailable.push(id);
+    const statusText = String(seat.SeatStatus ?? seat.Status ?? "").toLowerCase();
+    const available = booleanValue(seat.Available, seat.IsAvailable, seat.IsSeatAvailable);
+    const booked = booleanValue(seat.IsBooked, seat.Booked, seat.IsBlocked, seat.IsReserved);
+    const blockedByStatus = ["false", "booked", "blocked", "sold", "unavailable"].includes(statusText);
+    if (available === false || booked || blockedByStatus) unavailable.push(id);
+    const seatType = `${seat.SeatType || seat.Type || seat.BerthType || ""}`.toLowerCase();
+    const width = numericValue(seat.Width, seat.SeatWidth, seat.w, 1) || 1;
+    const height = numericValue(seat.Height, seat.SeatHeight, seat.h, seatType.includes("sleeper") || seatType.includes("berth") ? 2 : 1) || 1;
+    const isUpper = booleanValue(seat.IsUpper, seat.Upper, seat.IsUpperDeck);
+    const deckText = `${seat.Deck || seat.zIndex || seat.level || seat.DeckNo || ""}`.toLowerCase();
     return {
       id,
-      deck: String(seat.Deck || seat.zIndex || seat.level || "lower").toLowerCase().includes("upper") ? "upper" : "lower",
+      label: id,
+      deck: isUpper || deckText.includes("upper") || deckText === "1" ? "upper" : "lower",
+      row: numericValue(seat.RowNo, seat.Row, seat.row, seat.Y, seat.y, seat.RowIndex),
+      column: numericValue(seat.ColumnNo, seat.Column, seat.column, seat.X, seat.x, seat.ColumnIndex),
+      width,
+      height,
+      fare: fareValue(seat.Price || seat.Fare || seat.SeatFare || seat),
       fareMultiplier: 1,
-      isWalkway: Boolean(seat.isWalkway)
+      isWalkway: Boolean(seat.isWalkway || seat.IsWalkway),
+      isBerth: seatType.includes("sleeper") || seatType.includes("berth") || height > 1,
+      ladies: Boolean(booleanValue(seat.IsLadiesSeat, seat.LadiesSeat, seat.IsLadies, seat.ForLadies) || false),
+      males: Boolean(booleanValue(seat.IsMalesSeat, seat.MalesSeat, seat.ForMales) || false),
+      rawType: seat.SeatType || seat.Type || seat.BerthType || ""
     };
   }) : [];
   return { type, unavailable, seats };
