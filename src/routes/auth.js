@@ -21,29 +21,40 @@ const userView = (user) => ({
   rewardPoints: user.rewardPoints || 0
 });
 
-const firstUrl = (value) => String(value || "").split(",").map((url) => url.trim()).filter(Boolean)[0];
-const frontendUrl = () => process.env.FRONTEND_URL || firstUrl(process.env.CLIENT_URL) || "http://localhost:5173";
-const googleCallbackUrl = () => process.env.GOOGLE_CALLBACK_URL || "http://localhost:5000/api/auth/google/callback";
+const urlsFromEnv = (...values) =>
+  values
+    .flatMap((value) => String(value || "").split(","))
+    .map((url) => url.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+const configuredFrontendUrls = () => urlsFromEnv(process.env.FRONTEND_URL, process.env.CLIENT_URL);
+const defaultFrontendUrl = () => configuredFrontendUrls()[0] || "https://traveltimes-web.onrender.com";
+const googleCallbackUrl = () => process.env.GOOGLE_CALLBACK_URL || "https://tt-server-2a68.onrender.com/api/auth/google/callback";
 const oauthStateSecret = () => process.env.JWT_SECRET || "traveltimes-premium-secret";
 
-const redirectToFrontendCallback = (res, params) => {
-  const hash = new URLSearchParams(params).toString();
-  res.redirect(`${frontendUrl().replace(/\/$/, "")}/auth/google/callback#${hash}`);
+const safeFrontendUrl = (returnTo) => {
+  const requested = String(returnTo || "").trim().replace(/\/$/, "");
+  const allowed = configuredFrontendUrls();
+  return allowed.includes(requested) ? requested : defaultFrontendUrl();
 };
 
-const createOAuthState = () =>
+const redirectToFrontendCallback = (res, params, returnTo) => {
+  const hash = new URLSearchParams(params).toString();
+  res.redirect(`${safeFrontendUrl(returnTo)}/auth/google/callback#${hash}`);
+};
+
+const createOAuthState = (returnTo) =>
   jwt.sign(
-    { provider: "google", nonce: crypto.randomBytes(16).toString("hex") },
+    { provider: "google", nonce: crypto.randomBytes(16).toString("hex"), returnTo: safeFrontendUrl(returnTo) },
     oauthStateSecret(),
     { expiresIn: "10m" }
   );
 
-const verifyOAuthState = (state) => {
+const readOAuthState = (state) => {
   try {
     const payload = jwt.verify(String(state || ""), oauthStateSecret());
-    return payload.provider === "google";
+    return payload.provider === "google" ? payload : null;
   } catch {
-    return false;
+    return null;
   }
 };
 
@@ -84,7 +95,7 @@ authRouter.post("/oauth", async (req, res) => {
   res.json({ token: issueToken(user), user: userView(user) });
 });
 
-authRouter.get("/google", (_req, res) => {
+authRouter.get("/google", (req, res) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
     return redirectToFrontendCallback(res, { error: "Google sign-in is not configured" });
@@ -97,7 +108,7 @@ authRouter.get("/google", (_req, res) => {
     scope: "openid email profile",
     access_type: "online",
     prompt: "select_account",
-    state: createOAuthState()
+    state: createOAuthState(req.query.returnTo)
   });
 
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
@@ -105,14 +116,16 @@ authRouter.get("/google", (_req, res) => {
 
 authRouter.get("/google/callback", async (req, res) => {
   const { code, error, state } = req.query;
-  if (error) return redirectToFrontendCallback(res, { error: String(error) });
-  if (!code) return redirectToFrontendCallback(res, { error: "Google did not return an authorization code" });
-  if (!verifyOAuthState(state)) return redirectToFrontendCallback(res, { error: "Google sign-in session expired. Please try again." });
+  const oauthState = readOAuthState(state);
+  const returnTo = oauthState?.returnTo;
+  if (error) return redirectToFrontendCallback(res, { error: String(error) }, returnTo);
+  if (!code) return redirectToFrontendCallback(res, { error: "Google did not return an authorization code" }, returnTo);
+  if (!oauthState) return redirectToFrontendCallback(res, { error: "Google sign-in session expired. Please try again." }, returnTo);
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    return redirectToFrontendCallback(res, { error: "Google sign-in is not configured" });
+    return redirectToFrontendCallback(res, { error: "Google sign-in is not configured" }, returnTo);
   }
 
   try {
@@ -143,10 +156,10 @@ authRouter.get("/google/callback", async (req, res) => {
 
     const profile = await profileRes.json();
     if (!profile.email) {
-      return redirectToFrontendCallback(res, { error: "Google account email is required" });
+      return redirectToFrontendCallback(res, { error: "Google account email is required" }, returnTo);
     }
     if (profile.email_verified === false || profile.email_verified === "false") {
-      return redirectToFrontendCallback(res, { error: "Google account email is not verified" });
+      return redirectToFrontendCallback(res, { error: "Google account email is not verified" }, returnTo);
     }
 
     const [user] = await User.findOrCreate({
@@ -168,10 +181,10 @@ authRouter.get("/google/callback", async (req, res) => {
       });
     }
 
-    redirectToFrontendCallback(res, { token: issueToken(user) });
+    redirectToFrontendCallback(res, { token: issueToken(user) }, returnTo);
   } catch (err) {
     console.error("Google OAuth failed:", err.message);
-    redirectToFrontendCallback(res, { error: "Google sign-in failed" });
+    redirectToFrontendCallback(res, { error: "Google sign-in failed" }, returnTo);
   }
 });
 

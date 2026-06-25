@@ -1,5 +1,8 @@
 export const buildResetLink = (token) => {
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+  const clientUrl = (process.env.FRONTEND_URL || process.env.CLIENT_URL || "https://traveltimes-web.onrender.com")
+    .split(",")[0]
+    .trim()
+    .replace(/\/$/, "");
   return `${clientUrl}/?resetToken=${encodeURIComponent(token)}`;
 };
 

@@ -13,14 +13,17 @@ process.env.JWT_SECRET = "oauth-smoke-secret";
 process.env.GOOGLE_CLIENT_ID = "test-google-client.apps.googleusercontent.com";
 process.env.GOOGLE_CLIENT_SECRET = "test-google-secret";
 process.env.GOOGLE_CALLBACK_URL = "https://api.example.com/api/auth/google/callback";
-process.env.FRONTEND_URL = "https://www.orbita.co.in";
+process.env.FRONTEND_URL = "https://traveltimes-web.onrender.com,https://www.orbita.co.in";
 
 const app = express();
 app.use(express.json());
 app.use("/api/auth", authRouter);
 
 try {
-  const googleStart = await request(app).get("/api/auth/google").expect(302);
+  const googleStart = await request(app)
+    .get("/api/auth/google")
+    .query({ returnTo: "https://www.orbita.co.in" })
+    .expect(302);
   const googleUrl = new URL(googleStart.headers.location);
 
   assert.equal(googleUrl.origin, "https://accounts.google.com");
@@ -31,7 +34,16 @@ try {
   assert.match(googleUrl.searchParams.get("scope"), /openid/);
 
   const state = googleUrl.searchParams.get("state");
-  assert.equal(jwt.verify(state, process.env.JWT_SECRET).provider, "google");
+  const decodedState = jwt.verify(state, process.env.JWT_SECRET);
+  assert.equal(decodedState.provider, "google");
+  assert.equal(decodedState.returnTo, "https://www.orbita.co.in");
+
+  const untrustedStart = await request(app)
+    .get("/api/auth/google")
+    .query({ returnTo: "http://localhost:5173" })
+    .expect(302);
+  const untrustedState = new URL(untrustedStart.headers.location).searchParams.get("state");
+  assert.equal(jwt.verify(untrustedState, process.env.JWT_SECRET).returnTo, "https://traveltimes-web.onrender.com");
 
   const invalidState = await request(app)
     .get("/api/auth/google/callback")
@@ -40,7 +52,7 @@ try {
 
   assert.match(
     invalidState.headers.location,
-    /^https:\/\/www\.orbita\.co\.in\/auth\/google\/callback#error=/
+    /^https:\/\/traveltimes-web\.onrender\.com\/auth\/google\/callback#error=/
   );
 
   const fakeUser = {
