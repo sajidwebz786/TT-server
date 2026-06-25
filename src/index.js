@@ -14,7 +14,7 @@ import { City } from "./models/index.js";
 dotenv.config();
 
 const app = express();
-const allowedOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL]
+const allowedOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL, process.env.FRONTEND_URL]
   .filter(Boolean)
   .join(",")
   .split(",")
