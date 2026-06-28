@@ -14,12 +14,14 @@ import { City } from "./models/index.js";
 dotenv.config();
 
 const app = express();
-const allowedOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL, process.env.FRONTEND_URL]
+const defaultOrigins = ["https://orbita.co.in", "https://www.orbita.co.in"];
+const envOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL, process.env.FRONTEND_URL]
   .filter(Boolean)
   .join(",")
   .split(",")
   .map(url => url.trim())
   .filter(Boolean);
+const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
 
 app.use(cors({
   origin: allowedOrigins.length ? allowedOrigins : true,
