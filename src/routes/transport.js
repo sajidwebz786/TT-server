@@ -1,4 +1,5 @@
 import express from "express";
+import { Op } from "sequelize";
 import { TransportRoute } from "../models/index.js";
 import { bdsdClient, getBdsdBusBoardingPoints, getBdsdBusSeatLayout, searchBdsdBuses, searchBdsdFlights } from "../services/bdsdClient.js";
 
@@ -14,7 +15,8 @@ transportRouter.get("/:type/search", async (req, res) => {
 
   if (type === "bus" && req.query.from && req.query.to) {
     const externalRoutes = await tryExternalSearch(() => searchBdsdBuses({ from: req.query.from, to: req.query.to, date: req.query.date }));
-    return res.json(externalRoutes.length ? await upsertExternalRoutes(externalRoutes) : []);
+    if (externalRoutes.length) return res.json(await upsertExternalRoutes(externalRoutes));
+    return res.json(await findStoredRoutes(type, req.query));
   }
   if (type === "flight" && req.query.from && req.query.to) {
     const externalRoutes = await tryExternalSearch(() => searchBdsdFlights({ from: req.query.from, to: req.query.to, date: req.query.date, tripType: req.query.tripType, travellers: req.query.travellers }));
@@ -25,6 +27,13 @@ transportRouter.get("/:type/search", async (req, res) => {
   }
   res.json([]);
 });
+
+const findStoredRoutes = async (type, query) => {
+  const where = { type };
+  if (query.from) where.origin = { [Op.iLike]: String(query.from) };
+  if (query.to) where.destination = { [Op.iLike]: String(query.to) };
+  return TransportRoute.findAll({ where, order: [["price", "ASC"]] });
+};
 
 transportRouter.get("/:type/:id/seats", async (req, res) => {
   const route = await TransportRoute.findOne({ where: { id: req.params.id, type: req.params.type } });
