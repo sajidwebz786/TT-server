@@ -230,7 +230,15 @@ function normalizeAmenities(value) {
 }
 
 function normalizeSeatLayout(item) {
-  const typeText = `${item.SeatType || item.LayoutType || item.BusType || item.ServiceType || ""}`.toLowerCase();
+  const result = item.Result && typeof item.Result === "object" ? item.Result : {};
+  const layoutObject = item.SeatLayout && !Array.isArray(item.SeatLayout)
+    ? item.SeatLayout
+    : result.SeatLayout && typeof result.SeatLayout === "object"
+      ? result.SeatLayout
+      : {};
+  const htmlLayout = item.HTMLLayout || result.HTMLLayout || findValue(item, ["HTMLLayout"]);
+  const htmlMeta = parseSeatHtmlMeta(htmlLayout);
+  const typeText = `${item.SeatType || item.LayoutType || item.BusType || item.ServiceType || result.BusType || ""}`.toLowerCase();
   let type = typeText.includes("sleeper") && (typeText.includes("seat") || typeText.includes("sitting"))
     ? "mixed"
     : typeText.includes("sleeper")
@@ -238,25 +246,25 @@ function normalizeSeatLayout(item) {
       : typeText.includes("semi")
         ? "semi-seater"
         : "seater";
-  const rawSource = item.Seats || item.SeatLayout || item.SeatDetails || item.SeatsDetails || item.SeatLayoutDetails || item.seats || [];
+  const rawSource = item.Seats || item.SeatDetails || item.SeatsDetails || item.SeatLayoutDetails || item.seats || (Array.isArray(item.SeatLayout) ? item.SeatLayout : null) || layoutObject.SeatDetails || layoutObject.Seats || layoutObject.SeatLayout || [];
   const rawSeats = Array.isArray(rawSource)
     ? flattenObjects(rawSource)
     : flattenObjects(firstArray(rawSource, ["Seats", "SeatLayout", "SeatDetails", "SeatsDetails", "SeatLayoutDetails", "data"]));
   const unavailable = [];
   const seats = rawSeats.map((seat, index) => {
     const id = String(seat.SeatName || seat.SeatNo || seat.SeatNumber || seat.id || index + 1);
+    const meta = htmlMeta.get(id) || {};
     const statusText = String(seat.SeatStatus ?? seat.Status ?? "").toLowerCase();
-    const available = booleanValue(seat.Available, seat.IsAvailable, seat.IsSeatAvailable);
+    const available = booleanValue(seat.Available, seat.IsAvailable, seat.IsSeatAvailable, meta.htmlAvailable);
     const booked = booleanValue(seat.IsBooked, seat.Booked, seat.IsBlocked, seat.IsReserved);
     const blockedByStatus = ["false", "booked", "blocked", "sold", "unavailable"].includes(statusText);
     if (available === false || booked || blockedByStatus) unavailable.push(id);
     const seatType = `${seat.SeatType || seat.Type || seat.BerthType || ""}`.toLowerCase();
-    const seatTextSaysBerth = seatType.includes("sleeper") || seatType.includes("berth");
-    const layoutSaysBerth = typeText.includes("sleeper") || typeText.includes("berth");
     const width = numericValue(seat.Width, seat.SeatWidth, seat.w, 1) || 1;
-    const height = numericValue(seat.Height, seat.SeatHeight, seat.h, seatType.includes("sleeper") || seatType.includes("berth") ? 2 : 1) || 1;
+    const height = numericValue(seat.Height, seat.SeatHeight, seat.h, seatKindFrom(seatType, meta.htmlClass) === "berth" ? 2 : 1) || 1;
     const isUpper = booleanValue(seat.IsUpper, seat.Upper, seat.IsUpperDeck);
     const deckText = `${seat.Deck || seat.zIndex || seat.level || seat.DeckNo || ""}`.toLowerCase();
+    const visualType = seatKindFrom(seatType || seat.rawType, meta.htmlClass);
     return {
       id,
       label: id,
@@ -265,10 +273,12 @@ function normalizeSeatLayout(item) {
       column: numericValue(seat.ColumnNo, seat.Column, seat.column, seat.X, seat.x, seat.ColumnIndex),
       width,
       height,
-      fare: fareValue(seat.Price || seat.Fare || seat.SeatFare || seat),
+      fare: fareValue(seat.Price || seat.Fare || seat.SeatFare || meta.htmlFare || seat),
       fareMultiplier: 1,
       isWalkway: Boolean(seat.isWalkway || seat.IsWalkway),
-      isBerth: seatTextSaysBerth || (layoutSaysBerth && height > 1),
+      isBerth: visualType === "berth",
+      visualType,
+      htmlClass: meta.htmlClass || "",
       ladies: Boolean(booleanValue(seat.IsLadiesSeat, seat.LadiesSeat, seat.IsLadies, seat.ForLadies) || false),
       males: Boolean(booleanValue(seat.IsMalesSeat, seat.MalesSeat, seat.ForMales) || false),
       rawType: seat.SeatType || seat.Type || seat.BerthType || ""
@@ -278,7 +288,8 @@ function normalizeSeatLayout(item) {
   const hasChairs = seats.some((seat) => !seat.isBerth);
   if (hasBerths && hasChairs) type = "mixed";
   else if (hasBerths) type = "sleeper";
-  return { type, unavailable, seats };
+  else if (hasChairs) type = "seater";
+  return { type, unavailable, seats, availableSeats: Number(result.AvailableSeats || item.AvailableSeats) || undefined };
 }
 
 function normalizeBoardingPoints(data) {
@@ -344,6 +355,41 @@ function firstObject(value) {
 function flattenObjects(value) {
   if (!Array.isArray(value)) return value && typeof value === "object" ? [value] : [];
   return value.flatMap((item) => Array.isArray(item) ? flattenObjects(item) : (item && typeof item === "object" ? [item] : []));
+}
+
+function htmlAttribute(tag, name) {
+  const match = tag.match(new RegExp(`${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "i"));
+  return match ? (match[2] ?? match[3] ?? "") : "";
+}
+
+function parseSeatHtmlMeta(html) {
+  if (typeof html !== "string" || !html.trim()) return new Map();
+  const meta = new Map();
+  const divRegex = /<div\b[^>]*>/gi;
+  let match;
+  while ((match = divRegex.exec(html))) {
+    const tag = match[0];
+    const className = htmlAttribute(tag, "class");
+    if (!/\b(?:b?hseat|b?nseat|seat)\b/i.test(className)) continue;
+    const onclick = htmlAttribute(tag, "onclick");
+    const seatMatch = onclick.match(/AddRemoveSeat\s*\(\s*this\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]/i);
+    if (!seatMatch) continue;
+    meta.set(String(seatMatch[1]), {
+      htmlClass: className,
+      htmlFare: Number(seatMatch[2]) || undefined,
+      htmlAvailable: !/\bb/i.test(className)
+    });
+  }
+  return meta;
+}
+
+function seatKindFrom(rawType, htmlClass) {
+  const type = `${rawType || ""}`.toLowerCase();
+  const className = `${htmlClass || ""}`.toLowerCase();
+  const sleeperText = type.includes("sleeper") || type.includes("berth") || className.includes("sleeper") || className.includes("berth");
+  if (sleeperText) return "berth";
+  if (/\bb?hseat\b/.test(className) || type.includes("horizontal") || type === "2") return "horizontal-seat";
+  return "seat";
 }
 
 function normalizeHotel(item, query, token) {
@@ -430,7 +476,7 @@ export async function getBdsdBusSeatLayout(route) {
     SearchTokenId: token,
     ResultIndex: resultIndex
   });
-  return normalizeSeatLayout({ ...data, BusType: route.classType, SeatLayout: firstArray(data, ["Seats", "SeatLayout", "SeatDetails", "SeatsDetails", "SeatLayoutDetails", "data"]) });
+  return normalizeSeatLayout({ ...data, BusType: route.classType });
 }
 
 export async function getBdsdBusBoardingPoints(route) {
