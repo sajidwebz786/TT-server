@@ -1,3 +1,5 @@
+import { City } from "../models/index.js";
+
 const baseUrl = () => (process.env.BDSD_API_URL || "").replace(/\/+$/, "");
 const enabled = () => process.env.BDSD_ENABLED === "true" && Boolean(baseUrl());
 const userIp = () => process.env.BDSD_USER_IP || "103.209.223.52";
@@ -63,7 +65,7 @@ function bdsdHotelCityIds() {
   return parseMap("BDSD_HOTEL_CITY_IDS", defaultHotelCityIds);
 }
 
-function providerCities() {
+function envProviderCities() {
   const byName = new Map();
   const add = (name, fields) => {
     const current = byName.get(name) || {
@@ -94,6 +96,32 @@ function providerCities() {
   }
 
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function providerCities() {
+  const cities = await City.findAll({ order: [["name", "ASC"]] });
+  if (!cities.length) return envProviderCities();
+  return cities.map((city) => {
+    const modes = new Set(city.transportModes || []);
+    if (city.externalBusCityId || city.hasLiveBusSearch) modes.add("bus");
+    if (city.airportCode || city.hasLiveFlightSearch) modes.add("flight");
+    if (city.externalHotelCityId || city.hasLiveHotelSearch) modes.add("hotel");
+    return {
+      id: city.id,
+      name: city.name,
+      state: city.state || "",
+      country: city.country || "India",
+      isInternational: Boolean(city.isInternational),
+      transportModes: [...modes],
+      externalProvider: city.externalProvider,
+      externalBusCityId: city.externalBusCityId,
+      airportCode: city.airportCode,
+      externalHotelCityId: city.externalHotelCityId,
+      hasLiveBusSearch: Boolean(city.externalBusCityId || city.hasLiveBusSearch),
+      hasLiveFlightSearch: Boolean(city.airportCode || city.hasLiveFlightSearch),
+      hasLiveHotelSearch: Boolean(city.externalHotelCityId || city.hasLiveHotelSearch)
+    };
+  });
 }
 
 function headers() {
@@ -410,9 +438,12 @@ function normalizeHotel(item, query, token) {
 }
 
 export async function searchBdsdBuses(query) {
-  const cityIds = bdsdBusCityIds();
-  const originId = cityIds[query.from];
-  const destinationId = cityIds[query.to];
+  const [origin, destination] = await Promise.all([
+    findBusCityId(query.from),
+    findBusCityId(query.to)
+  ]);
+  const originId = origin?.externalBusCityId;
+  const destinationId = destination?.externalBusCityId;
   if (!enabled() || !originId || !destinationId) return [];
   const data = await request(process.env.BDSD_BUS_SEARCH_PATH || "/busservice/rest/search", {
     UserIp: userIp(),
@@ -422,6 +453,14 @@ export async function searchBdsdBuses(query) {
   });
   const token = findValue(data, ["SearchTokenId", "TraceId", "TokenId"]);
   return firstArray(data, ["BusResults", "BusResult", "Results", "Result", "data"]).map((item) => normalizeBusRoute(item, query, token));
+}
+
+async function findBusCityId(name) {
+  if (!name) return null;
+  const city = await City.findOne({ where: { name } });
+  if (city?.externalBusCityId) return city;
+  const fallbackId = bdsdBusCityIds()[name];
+  return fallbackId ? { externalBusCityId: String(fallbackId) } : null;
 }
 
 export async function searchBdsdFlights(query) {

@@ -10,7 +10,8 @@
     "test": "node src/oauthSmokeTest.js",
     "dev": "nodemon src/index.js",
     "db:create": "node src/createDatabase.js",
-    "db:seed": "node src/seed/index.js"
+    "db:seed": "node src/seed/index.js",
+    "import:bdsd-cities": "node src/scripts/importBdsdCities.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -37,6 +37,11 @@ export const City = sequelize.define("City", {
   isInternational: { type: DataTypes.BOOLEAN, defaultValue: false },
   externalProvider: DataTypes.STRING,
   externalBusCityId: DataTypes.STRING,
+  airportCode: DataTypes.STRING,
+  externalHotelCityId: DataTypes.STRING,
+  hasLiveBusSearch: { type: DataTypes.BOOLEAN, defaultValue: false },
+  hasLiveFlightSearch: { type: DataTypes.BOOLEAN, defaultValue: false },
+  hasLiveHotelSearch: { type: DataTypes.BOOLEAN, defaultValue: false },
   externalPayload: { type: DataTypes.JSONB, defaultValue: {} }
 });
 

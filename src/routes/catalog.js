@@ -9,13 +9,14 @@ catalogRouter.get("/destinations", async (_req, res) => {
 });
 
 catalogRouter.get("/cities", async (req, res) => {
-  res.json(filterProviderCities(req.query));
+  res.json(await filterProviderCities(req.query));
 });
 
 catalogRouter.get("/cities/search", async (req, res) => {
   const query = String(req.query.q || "").trim();
   const limit = Number(req.query.limit || 25);
-  res.json(filterProviderCities(req.query).filter((city) => !query || city.name.toLowerCase().includes(query.toLowerCase())).slice(0, limit));
+  const cities = await filterProviderCities(req.query);
+  res.json(cities.filter((city) => !query || city.name.toLowerCase().includes(query.toLowerCase())).slice(0, limit));
 });
 
 catalogRouter.get("/packages", async (req, res) => {
@@ -72,9 +73,10 @@ const upsertExternalHotels = async (hotels) => {
   return records.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
 };
 
-const filterProviderCities = (query) => {
+const filterProviderCities = async (query) => {
   const mode = query.mode || query.transportMode || null;
-  return bdsdClient.providerCities().filter((city) => {
+  const cities = await bdsdClient.providerCities();
+  return cities.filter((city) => {
     if (query.international === "true" && !city.isInternational) return false;
     if (query.international !== "true" && city.isInternational) return false;
     if (mode && !city.transportModes.includes(mode)) return false;
