@@ -6,10 +6,11 @@ export const adminRouter = express.Router();
 adminRouter.use(auth, adminOnly);
 
 adminRouter.get("/overview", async (_req, res) => {
-  const [bookings, users, revenue, oauthUsers, rewardPoints, busBookings, flightBookings, trainBookings] = await Promise.all([
+  const [bookings, users, revenue, refunded, oauthUsers, rewardPoints, busBookings, flightBookings, trainBookings] = await Promise.all([
     Booking.count(),
     User.count({ where: { role: "customer" } }),
-    Booking.sum("totalAmount"),
+    Booking.sum("totalAmount", { where: { paymentStatus: "paid" } }),
+    Booking.sum("totalAmount", { where: { paymentStatus: "refunded" } }),
     User.count({ where: { role: "customer", authProvider: ["google", "facebook", "apple"] } }),
     User.sum("rewardPoints", { where: { role: "customer" } }),
     Booking.count({ where: { type: "bus" } }),
@@ -20,6 +21,7 @@ adminRouter.get("/overview", async (_req, res) => {
     bookings,
     users,
     revenue: Number(revenue || 0),
+    refunded: Number(refunded || 0),
     oauthUsers,
     rewardPoints: Number(rewardPoints || 0),
     byType: { bus: busBookings, flight: flightBookings, train: trainBookings }

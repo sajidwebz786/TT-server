@@ -570,6 +570,26 @@ export async function bookBdsdBus(route, bookingDraft) {
   return request(process.env.BDSD_BUS_BOOK_PATH || "/busservice/rest/book", body);
 }
 
+export async function cancelBdsdBusBooking(route, booking, reason = "Cancel Bus Ticket") {
+  const token = route?.externalPayload?.SearchTokenId || booking.metadata?.bdsdSearchTokenId || booking.metadata?.SearchTokenId;
+  const providerBooking = booking.metadata?.bdsdBooking || {};
+  const bookingId = findValue(providerBooking, ["BookingId", "BusBookingId", "TicketId", "TicketNo", "PNR"]);
+  const seatId = booking.selectedSeats?.[0] || booking.passengers?.[0]?.seat || findValue(providerBooking, ["SeatId", "SeatName"]);
+  if (!enabled() || !token || !bookingId || !seatId) {
+    return {
+      skipped: true,
+      reason: !enabled() ? "BDSD disabled" : "BDSD booking id, token or seat id missing"
+    };
+  }
+  return request(process.env.BDSD_BUS_CANCEL_REQUEST_PATH || "/busservice/rest/cancelrequest", {
+    UserIp: userIp(),
+    SearchTokenId: token,
+    BookingId: bookingId,
+    SeatId: String(seatId),
+    Remarks: reason || "Cancel Bus Ticket"
+  });
+}
+
 export const bdsdClient = {
   enabled,
   configured,
@@ -582,5 +602,6 @@ export const bdsdClient = {
   searchBdsdHotels,
   getBdsdBusSeatLayout,
   getBdsdBusBoardingPoints,
-  bookBdsdBus
+  bookBdsdBus,
+  cancelBdsdBusBooking
 };

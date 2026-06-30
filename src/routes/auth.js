@@ -234,3 +234,26 @@ authRouter.post("/reset-password", async (req, res) => {
 authRouter.get("/me", auth, (req, res) => {
   res.json({ user: userView(req.user) });
 });
+
+authRouter.patch("/me", auth, async (req, res) => {
+  const name = String(req.body.name || "").trim();
+  const phone = String(req.body.phone || "").trim();
+  if (!name) return res.status(400).json({ message: "Name is required" });
+  await req.user.update({ name, phone });
+  res.json({ user: userView(req.user), message: "Profile updated successfully" });
+});
+
+authRouter.post("/change-password", auth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!newPassword || String(newPassword).length < 6) return res.status(400).json({ message: "New password must be at least 6 characters" });
+  if (req.user.authProvider === "email") {
+    if (!currentPassword) return res.status(400).json({ message: "Current password is required" });
+    const valid = await bcrypt.compare(currentPassword, req.user.passwordHash);
+    if (!valid) return res.status(401).json({ message: "Current password is incorrect" });
+  }
+  await req.user.update({
+    passwordHash: await bcrypt.hash(newPassword, 10),
+    authProvider: "email"
+  });
+  res.json({ user: userView(req.user), message: "Password changed successfully" });
+});
