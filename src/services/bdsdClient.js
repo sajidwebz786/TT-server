@@ -288,11 +288,14 @@ function normalizeSeatLayout(item) {
     const blockedByStatus = ["false", "booked", "blocked", "sold", "unavailable"].includes(statusText);
     if (available === false || booked || blockedByStatus) unavailable.push(id);
     const seatType = `${seat.SeatType || seat.Type || seat.BerthType || ""}`.toLowerCase();
-    const width = numericValue(seat.Width, seat.SeatWidth, seat.w, 1) || 1;
-    const height = numericValue(seat.Height, seat.SeatHeight, seat.h, seatKindFrom(seatType, meta.htmlClass) === "berth" ? 2 : 1) || 1;
+    const visualType = seatKindFrom(seatType || seat.rawType, meta.htmlClass, id);
+    const isBerth = visualType === "berth";
+    const rawWidth = numericValue(seat.Width, seat.SeatWidth, seat.w, 1) || 1;
+    const rawHeight = numericValue(seat.Height, seat.SeatHeight, seat.h, isBerth ? 2 : 1) || 1;
+    const width = isBerth && rawWidth > rawHeight ? Math.max(1, rawHeight) : rawWidth;
+    const height = isBerth && rawWidth > rawHeight ? Math.max(2, rawWidth) : (isBerth ? Math.max(2, rawHeight) : rawHeight);
     const isUpper = booleanValue(seat.IsUpper, seat.Upper, seat.IsUpperDeck);
     const deckText = `${seat.Deck || seat.zIndex || seat.level || seat.DeckNo || ""}`.toLowerCase();
-    const visualType = seatKindFrom(seatType || seat.rawType, meta.htmlClass);
     return {
       id,
       label: id,
@@ -304,7 +307,7 @@ function normalizeSeatLayout(item) {
       fare: fareValue(seat.Price || seat.Fare || seat.SeatFare || meta.htmlFare || seat),
       fareMultiplier: 1,
       isWalkway: Boolean(seat.isWalkway || seat.IsWalkway),
-      isBerth: visualType === "berth",
+      isBerth,
       visualType,
       htmlClass: meta.htmlClass || "",
       ladies: Boolean(booleanValue(seat.IsLadiesSeat, seat.LadiesSeat, seat.IsLadies, seat.ForLadies) || false),
@@ -411,9 +414,10 @@ function parseSeatHtmlMeta(html) {
   return meta;
 }
 
-function seatKindFrom(rawType, htmlClass) {
+function seatKindFrom(rawType, htmlClass, seatName = "") {
   const type = `${rawType || ""}`.toLowerCase();
   const className = `${htmlClass || ""}`.toLowerCase();
+  if (/^[LU]\d+$/i.test(String(seatName || ""))) return "berth";
   const sleeperText = type.includes("sleeper") || type.includes("berth") || className.includes("sleeper") || className.includes("berth");
   if (sleeperText) return "berth";
   if (/\bb?hseat\b/.test(className) || type.includes("horizontal") || type === "2") return "horizontal-seat";
