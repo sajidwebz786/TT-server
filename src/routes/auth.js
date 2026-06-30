@@ -61,6 +61,8 @@ const readOAuthState = (state) => {
 authRouter.post("/register", async (req, res) => {
   const { name, email, phone, password } = req.body;
   if (!name || !email || !password) return res.status(400).json({ message: "Name, email and password are required" });
+  const existing = await User.findOne({ where: { email } });
+  if (existing) return res.status(409).json({ message: "This email is already registered. Please login instead." });
   const user = await User.create({ name, email, phone, passwordHash: password });
   res.status(201).json({ token: issueToken(user), user: userView(user) });
 });
@@ -142,7 +144,8 @@ authRouter.get("/google/callback", async (req, res) => {
     });
 
     if (!tokenRes.ok) {
-      throw new Error("Google token exchange failed");
+      const body = await tokenRes.json().catch(() => ({}));
+      throw new Error(body.error_description || body.error || "Google token exchange failed");
     }
 
     const tokenData = await tokenRes.json();
@@ -184,7 +187,7 @@ authRouter.get("/google/callback", async (req, res) => {
     redirectToFrontendCallback(res, { token: issueToken(user) }, returnTo);
   } catch (err) {
     console.error("Google OAuth failed:", err.message);
-    redirectToFrontendCallback(res, { error: "Google sign-in failed" }, returnTo);
+    redirectToFrontendCallback(res, { error: `Google sign-in failed: ${err.message}` }, returnTo);
   }
 });
 

@@ -27,17 +27,21 @@ bookingRouter.get("/payments/status", auth, (_req, res) => {
 bookingRouter.post("/payments/order", auth, async (req, res) => {
   if (!razorpayConfigured()) return res.status(503).json({ message: "Razorpay is not configured" });
   const { amount, type, routeLine } = req.body;
-  const order = await createRazorpayOrder({
-    amount,
-    receipt: code(type || "pay"),
-    notes: {
-      userId: String(req.user.id),
-      customer: req.user.email,
-      type: String(type || "booking"),
-      route: String(routeLine || "").slice(0, 120)
-    }
-  });
-  res.status(201).json(order);
+  try {
+    const order = await createRazorpayOrder({
+      amount,
+      receipt: code(type || "pay"),
+      notes: {
+        userId: String(req.user.id),
+        customer: req.user.email,
+        type: String(type || "booking"),
+        route: String(routeLine || "").slice(0, 120)
+      }
+    });
+    res.status(201).json(order);
+  } catch (error) {
+    res.status(502).json({ message: `Unable to start payment: ${error.message}` });
+  }
 });
 
 bookingRouter.post("/", auth, async (req, res) => {
