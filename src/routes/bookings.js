@@ -2,12 +2,18 @@ import express from "express";
 import { Booking, Hotel, TourPackage, TrackingEvent, TransportRoute, User } from "../models/index.js";
 import { auth } from "../middleware/auth.js";
 import { bookBdsdBus, cancelBdsdBusBooking } from "../services/bdsdClient.js";
-import { createRazorpayOrder, razorpayConfigured, refundRazorpayPayment, verifyRazorpayPayment } from "../services/razorpayClient.js";
+import { createRazorpayOrder, razorpayConfigured, razorpayTestMode, refundRazorpayPayment, verifyRazorpayPayment } from "../services/razorpayClient.js";
 
 export const bookingRouter = express.Router();
 
 const code = (type) => `TT-${type.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
 const paymentsRequired = () => process.env.PAYMENTS_REQUIRED !== "false" && razorpayConfigured();
+const validTestPayment = (payment) => (
+  razorpayTestMode() &&
+  payment?.simulated === true &&
+  String(payment?.razorpay_order_id || "").startsWith("order_") &&
+  String(payment?.razorpay_payment_id || "").startsWith("pay_test_")
+);
 
 const refundPercentFor = (booking) => {
   const travelTime = booking.travelDate ? new Date(booking.travelDate).getTime() : NaN;
@@ -21,7 +27,7 @@ const refundPercentFor = (booking) => {
 };
 
 bookingRouter.get("/payments/status", auth, (_req, res) => {
-  res.json({ razorpay: { enabled: razorpayConfigured(), paymentsRequired: paymentsRequired() } });
+  res.json({ razorpay: { enabled: razorpayConfigured(), paymentsRequired: paymentsRequired(), testMode: razorpayTestMode() } });
 });
 
 bookingRouter.post("/payments/order", auth, async (req, res) => {
@@ -48,7 +54,7 @@ bookingRouter.post("/", auth, async (req, res) => {
   const { type, itemId, passengers, selectedSeats, contact, travelDate, totalAmount, metadata, payment } = req.body;
   if (!type || !totalAmount) return res.status(400).json({ message: "Booking type and total amount are required" });
   if (paymentsRequired()) {
-    const verified = verifyRazorpayPayment(payment || {});
+    const verified = validTestPayment(payment) || verifyRazorpayPayment(payment || {});
     if (!verified) return res.status(402).json({ message: "Payment verification failed. Booking was not created." });
   }
 
@@ -71,7 +77,8 @@ bookingRouter.post("/", auth, async (req, res) => {
         provider: "razorpay",
         orderId: payment.razorpay_order_id,
         paymentId: payment.razorpay_payment_id,
-        verified: paymentsRequired()
+        verified: paymentsRequired(),
+        simulated: Boolean(payment.simulated && razorpayTestMode())
       } : { provider: "manual", verified: !paymentsRequired() }
     }
   });
