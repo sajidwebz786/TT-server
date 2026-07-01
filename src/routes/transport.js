@@ -4,6 +4,33 @@ import { TransportRoute } from "../models/index.js";
 import { bdsdClient, getBdsdBusBoardingPoints, getBdsdBusSeatLayout, searchBdsdBuses, searchBdsdFlights } from "../services/bdsdClient.js";
 
 export const transportRouter = express.Router();
+const SEARCH_CACHE_TTL_MS = Number(process.env.TRANSPORT_SEARCH_CACHE_TTL_MS || 180000);
+const searchCache = new Map();
+
+const cacheKeyFor = (type, query) => [
+  type,
+  String(query.from || "").trim().toLowerCase(),
+  String(query.to || "").trim().toLowerCase(),
+  String(query.date || "").trim(),
+  String(query.tripType || "").trim().toLowerCase()
+].join("|");
+
+const readSearchCache = (key) => {
+  const item = searchCache.get(key);
+  if (!item || item.expiresAt < Date.now()) {
+    searchCache.delete(key);
+    return null;
+  }
+  return item.routes;
+};
+
+const writeSearchCache = (key, routes) => {
+  searchCache.set(key, { routes, expiresAt: Date.now() + SEARCH_CACHE_TTL_MS });
+  if (searchCache.size > 120) {
+    const oldestKey = searchCache.keys().next().value;
+    searchCache.delete(oldestKey);
+  }
+};
 
 transportRouter.get("/providers/status", (_req, res) => {
   res.json({ bdsd: bdsdClient.configured() });
@@ -14,9 +41,18 @@ transportRouter.get("/:type/search", async (req, res) => {
   if (!["bus", "flight", "train"].includes(type)) return res.status(400).json({ message: "Invalid transport type" });
 
   if (type === "bus" && req.query.from && req.query.to) {
+    const key = cacheKeyFor(type, req.query);
+    const cachedRoutes = readSearchCache(key);
+    if (cachedRoutes) return res.json(cachedRoutes);
     const externalRoutes = await tryExternalSearch(() => searchBdsdBuses({ from: req.query.from, to: req.query.to, date: req.query.date }));
-    if (externalRoutes.length) return res.json(await upsertExternalRoutes(externalRoutes));
-    return res.json(await findStoredRoutes(type, req.query));
+    if (externalRoutes.length) {
+      const routes = await upsertExternalRoutes(externalRoutes);
+      writeSearchCache(key, routes);
+      return res.json(routes);
+    }
+    const routes = await findStoredRoutes(type, req.query);
+    writeSearchCache(key, routes);
+    return res.json(routes);
   }
   if (type === "flight" && req.query.from && req.query.to) {
     const externalRoutes = await tryExternalSearch(() => searchBdsdFlights({ from: req.query.from, to: req.query.to, date: req.query.date, tripType: req.query.tripType, travellers: req.query.travellers }));
@@ -59,13 +95,15 @@ transportRouter.get("/:type/:id/points", async (req, res) => {
 });
 
 const upsertExternalRoutes = async (routes) => {
-  const records = await Promise.all(routes.map(async (route) => {
-    const [record, created] = await TransportRoute.findOrCreate({
-      where: { routeCode: route.routeCode },
-      defaults: route
-    });
-    return created ? record : record.update(route);
-  }));
+  const routeCodes = routes.map((route) => route.routeCode);
+  const existingRecords = await TransportRoute.findAll({ where: { routeCode: routeCodes } });
+  const existingByCode = new Map(existingRecords.map((record) => [record.routeCode, record]));
+  const newRoutes = routes.filter((route) => !existingByCode.has(route.routeCode));
+  if (newRoutes.length) await TransportRoute.bulkCreate(newRoutes);
+  await Promise.all(routes
+    .filter((route) => existingByCode.has(route.routeCode))
+    .map((route) => existingByCode.get(route.routeCode).update(route)));
+  const records = await TransportRoute.findAll({ where: { routeCode: routeCodes } });
   return records.sort((a, b) => Number(a.price) - Number(b.price));
 };
 

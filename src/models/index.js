@@ -43,6 +43,12 @@ export const City = sequelize.define("City", {
   hasLiveFlightSearch: { type: DataTypes.BOOLEAN, defaultValue: false },
   hasLiveHotelSearch: { type: DataTypes.BOOLEAN, defaultValue: false },
   externalPayload: { type: DataTypes.JSONB, defaultValue: {} }
+}, {
+  indexes: [
+    { fields: ["name"] },
+    { fields: ["externalBusCityId"] },
+    { fields: ["hasLiveBusSearch"] }
+  ]
 });
 
 export const TourPackage = sequelize.define("TourPackage", {
@@ -91,6 +97,13 @@ export const TransportRoute = sequelize.define("TransportRoute", {
   externalPayload: { type: DataTypes.JSONB, defaultValue: {} },
   rating: { type: DataTypes.FLOAT, defaultValue: 4.5 },
   cancellationPolicy: DataTypes.STRING
+}, {
+  indexes: [
+    { fields: ["type", "origin", "destination"] },
+    { fields: ["type", "origin", "destination", "price"] },
+    { fields: ["routeCode"] },
+    { fields: ["externalProvider", "externalRouteId"] }
+  ]
 });
 
 export const Booking = sequelize.define("Booking", {
