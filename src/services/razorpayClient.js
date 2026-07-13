@@ -12,6 +12,10 @@ export function razorpayTestMode() {
   return keyId().startsWith("rzp_test_");
 }
 
+export function razorpayMode() {
+  return razorpayTestMode() ? "test" : "live";
+}
+
 function authHeader() {
   return `Basic ${Buffer.from(`${keyId()}:${keySecret()}`).toString("base64")}`;
 }
@@ -43,7 +47,7 @@ export async function createRazorpayOrder({ amount, receipt, notes }) {
     payment_capture: 1,
     notes: notes || {}
   });
-  return { ...order, keyId: keyId(), testMode: razorpayTestMode() };
+  return { ...order, keyId: keyId(), testMode: razorpayTestMode(), mode: razorpayMode() };
 }
 
 export function verifyRazorpayPayment({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) {
@@ -69,6 +73,7 @@ export async function refundRazorpayPayment({ paymentId, amount, notes }) {
 export const razorpayClient = {
   configured: razorpayConfigured,
   testMode: razorpayTestMode,
+  mode: razorpayMode,
   createOrder: createRazorpayOrder,
   verifyPayment: verifyRazorpayPayment,
   refundPayment: refundRazorpayPayment

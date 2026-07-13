@@ -288,18 +288,32 @@ function normalizeSeatLayout(item) {
     const blockedByStatus = ["false", "booked", "blocked", "sold", "unavailable"].includes(statusText);
     if (available === false || booked || blockedByStatus) unavailable.push(id);
     const seatType = `${seat.SeatType || seat.Type || seat.BerthType || ""}`.toLowerCase();
-    const visualType = seatKindFrom(seatType || seat.rawType, meta.htmlClass, id);
+    const explicitIsBerth = booleanValue(
+      seat.isBerth,
+      seat.IsBerth,
+      seat.is_berth,
+      seat.IsSleeper,
+      seat.isSleeper,
+      seat.IsSleeperSeat
+    );
+    const detectedVisualType = seatKindFrom(seatType || seat.rawType, meta.htmlClass, id);
+    const isUpper = booleanValue(seat.IsUpper, seat.Upper, seat.IsUpperDeck);
+    const deckText = `${seat.Deck || seat.zIndex || seat.level || seat.DeckNo || ""}`.toLowerCase();
+    const deck = isUpper || deckText.includes("upper") || deckText === "1" || /^U/i.test(id) ? "upper" : "lower";
+    const visualType = deck === "upper" || explicitIsBerth === true
+      ? "berth"
+      : explicitIsBerth === false
+        ? (detectedVisualType === "horizontal-seat" ? detectedVisualType : "seat")
+        : detectedVisualType;
     const isBerth = visualType === "berth";
     const rawWidth = numericValue(seat.Width, seat.SeatWidth, seat.w, 1) || 1;
     const rawHeight = numericValue(seat.Height, seat.SeatHeight, seat.h, isBerth ? 2 : 1) || 1;
     const width = isBerth && rawWidth > rawHeight ? Math.max(1, rawHeight) : rawWidth;
     const height = isBerth && rawWidth > rawHeight ? Math.max(2, rawWidth) : (isBerth ? Math.max(2, rawHeight) : rawHeight);
-    const isUpper = booleanValue(seat.IsUpper, seat.Upper, seat.IsUpperDeck);
-    const deckText = `${seat.Deck || seat.zIndex || seat.level || seat.DeckNo || ""}`.toLowerCase();
     return {
       id,
       label: id,
-      deck: isUpper || deckText.includes("upper") || deckText === "1" ? "upper" : "lower",
+      deck,
       row: numericValue(seat.RowNo, seat.RowNumber, seat.Row, seat.SeatRow, seat.row, seat.Y, seat.y, seat.RowIndex, seat.RowId),
       column: numericValue(seat.ColumnNo, seat.ColumnNumber, seat.Column, seat.SeatColumn, seat.column, seat.X, seat.x, seat.ColumnIndex, seat.ColNo, seat.Col),
       width,

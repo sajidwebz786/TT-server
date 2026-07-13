@@ -2,7 +2,7 @@ import express from "express";
 import { Booking, Hotel, TourPackage, TrackingEvent, TransportRoute, User } from "../models/index.js";
 import { auth } from "../middleware/auth.js";
 import { bookBdsdBus, cancelBdsdBusBooking } from "../services/bdsdClient.js";
-import { createRazorpayOrder, razorpayConfigured, razorpayTestMode, refundRazorpayPayment, verifyRazorpayPayment } from "../services/razorpayClient.js";
+import { createRazorpayOrder, razorpayConfigured, razorpayMode, razorpayTestMode, refundRazorpayPayment, verifyRazorpayPayment } from "../services/razorpayClient.js";
 
 export const bookingRouter = express.Router();
 
@@ -27,7 +27,7 @@ const refundPercentFor = (booking) => {
 };
 
 bookingRouter.get("/payments/status", auth, (_req, res) => {
-  res.json({ razorpay: { enabled: razorpayConfigured(), paymentsRequired: paymentsRequired(), testMode: razorpayTestMode() } });
+  res.json({ razorpay: { enabled: razorpayConfigured(), paymentsRequired: paymentsRequired(), testMode: razorpayTestMode(), mode: razorpayMode() } });
 });
 
 bookingRouter.post("/payments/order", auth, async (req, res) => {
@@ -54,6 +54,9 @@ bookingRouter.post("/", auth, async (req, res) => {
   const { type, itemId, passengers, selectedSeats, contact, travelDate, totalAmount, metadata, payment } = req.body;
   if (!type || !totalAmount) return res.status(400).json({ message: "Booking type and total amount are required" });
   if (paymentsRequired()) {
+    if (payment?.simulated && !razorpayTestMode()) {
+      return res.status(402).json({ message: "Simulated payments are disabled for live Razorpay keys. Please complete payment in Razorpay Checkout." });
+    }
     const verified = validTestPayment(payment) || verifyRazorpayPayment(payment || {});
     if (!verified) return res.status(402).json({ message: "Payment verification failed. Booking was not created." });
   }
@@ -78,7 +81,8 @@ bookingRouter.post("/", auth, async (req, res) => {
         orderId: payment.razorpay_order_id,
         paymentId: payment.razorpay_payment_id,
         verified: paymentsRequired(),
-        simulated: Boolean(payment.simulated && razorpayTestMode())
+        simulated: Boolean(payment.simulated && razorpayTestMode()),
+        mode: razorpayMode()
       } : { provider: "manual", verified: !paymentsRequired() }
     }
   });
