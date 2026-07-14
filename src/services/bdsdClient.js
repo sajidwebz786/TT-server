@@ -229,10 +229,17 @@ function normalizeBusRoute(item, query, token) {
   const arrival = item.ArrivalTime || item.arrivalTime || item.ArrTime || item.EndTime;
   const price = fareValue(item.BusPrice || item.Fare || item.Price || item.FareDetails || item);
   const classType = item.BusType || item.busType || item.ServiceType || item.classType || "Bus";
+  const providerName = item.TravelName || item.OperatorName || item.operatorName || item.providerName || "BDSD Bus Operator";
+  const providerRouteId = item.RouteId || item.routeId || item.TripId || item.ServiceId || `${providerName}-${departure || "unknown"}`;
+  const routeCode = ["BDSD", "BUS", query.date, query.from, query.to, providerRouteId, departure]
+    .map((value) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase())
+    .filter(Boolean)
+    .join("-")
+    .slice(0, 240);
   return {
     type: "bus",
-    providerName: item.TravelName || item.OperatorName || item.operatorName || item.providerName || "BDSD Bus Operator",
-    routeCode: `BDSD-BUS-${String(resultIndex || `${query.from}-${query.to}-${departure || Date.now()}`).replace(/[^A-Z0-9-]/gi, "").toUpperCase()}`,
+    providerName,
+    routeCode,
     origin: query.from,
     destination: query.to,
     departureTime: asDate(departure, `${query.date}T08:00:00`),
@@ -267,6 +274,7 @@ function normalizeSeatLayout(item) {
   const htmlLayout = item.HTMLLayout || result.HTMLLayout || findValue(item, ["HTMLLayout"]);
   const htmlMeta = parseSeatHtmlMeta(htmlLayout);
   const typeText = `${item.SeatType || item.LayoutType || item.BusType || item.ServiceType || result.BusType || ""}`.toLowerCase();
+  const sleeperOnlyLayout = typeText.includes("sleeper") && !/(seat|seater|sitting)/.test(typeText);
   let type = typeText.includes("sleeper") && (typeText.includes("seat") || typeText.includes("sitting"))
     ? "mixed"
     : typeText.includes("sleeper")
@@ -300,7 +308,7 @@ function normalizeSeatLayout(item) {
     const isUpper = booleanValue(seat.IsUpper, seat.Upper, seat.IsUpperDeck);
     const deckText = `${seat.Deck || seat.zIndex || seat.level || seat.DeckNo || ""}`.toLowerCase();
     const deck = isUpper || deckText.includes("upper") || deckText === "1" || /^U/i.test(id) ? "upper" : "lower";
-    const visualType = deck === "upper" || explicitIsBerth === true
+    const visualType = sleeperOnlyLayout || deck === "upper" || explicitIsBerth === true
       ? "berth"
       : explicitIsBerth === false
         ? (detectedVisualType === "horizontal-seat" ? detectedVisualType : "seat")
@@ -320,7 +328,7 @@ function normalizeSeatLayout(item) {
       height,
       fare: fareValue(seat.Price || seat.Fare || seat.SeatFare || meta.htmlFare || seat),
       fareMultiplier: 1,
-      isWalkway: Boolean(seat.isWalkway || seat.IsWalkway),
+      isWalkway: Boolean(seat.isWalkway || seat.IsWalkway || /(exit|door|gangway|walkway|aisle)/i.test(id)),
       isBerth,
       visualType,
       htmlClass: meta.htmlClass || "",
