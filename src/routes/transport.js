@@ -6,6 +6,7 @@ import { bdsdClient, getBdsdBusBoardingPoints, getBdsdBusSeatLayout, searchBdsdB
 export const transportRouter = express.Router();
 const SEARCH_CACHE_TTL_MS = Number(process.env.TRANSPORT_SEARCH_CACHE_TTL_MS || 180000);
 const searchCache = new Map();
+const pendingSearches = new Map();
 
 const cacheKeyFor = (type, query) => [
   type,
@@ -44,15 +45,24 @@ transportRouter.get("/:type/search", async (req, res) => {
     const key = cacheKeyFor(type, req.query);
     const cachedRoutes = readSearchCache(key);
     if (cachedRoutes) return res.json(cachedRoutes);
-    const externalRoutes = await tryExternalSearch(() => searchBdsdBuses({ from: req.query.from, to: req.query.to, date: req.query.date }));
-    if (externalRoutes.length) {
-      const routes = await upsertExternalRoutes(externalRoutes);
-      writeSearchCache(key, routes);
-      return res.json(routes);
+    let pending = pendingSearches.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const externalRoutes = await tryExternalSearch(() => searchBdsdBuses({ from: req.query.from, to: req.query.to, date: req.query.date }));
+        const routes = externalRoutes.length
+          ? await upsertExternalRoutes(externalRoutes)
+          : await findStoredRoutes(type, req.query);
+        writeSearchCache(key, routes);
+        return routes;
+      })();
+      pendingSearches.set(key, pending);
     }
-    const routes = await findStoredRoutes(type, req.query);
-    writeSearchCache(key, routes);
-    return res.json(routes);
+    try {
+      const routes = await pending;
+      return res.json(routes);
+    } finally {
+      if (pendingSearches.get(key) === pending) pendingSearches.delete(key);
+    }
   }
   if (type === "flight" && req.query.from && req.query.to) {
     const externalRoutes = await tryExternalSearch(() => searchBdsdFlights({ from: req.query.from, to: req.query.to, date: req.query.date, tripType: req.query.tripType, travellers: req.query.travellers }));
@@ -99,11 +109,11 @@ const upsertExternalRoutes = async (routes) => {
   const existingRecords = await TransportRoute.findAll({ where: { routeCode: routeCodes } });
   const existingByCode = new Map(existingRecords.map((record) => [record.routeCode, record]));
   const newRoutes = routes.filter((route) => !existingByCode.has(route.routeCode));
-  if (newRoutes.length) await TransportRoute.bulkCreate(newRoutes);
-  await Promise.all(routes
+  const createdRecords = newRoutes.length ? await TransportRoute.bulkCreate(newRoutes, { returning: true }) : [];
+  const updatedRecords = await Promise.all(routes
     .filter((route) => existingByCode.has(route.routeCode))
     .map((route) => existingByCode.get(route.routeCode).update(route)));
-  const records = await TransportRoute.findAll({ where: { routeCode: routeCodes } });
+  const records = [...createdRecords, ...updatedRecords];
   return records.sort((a, b) => Number(a.price) - Number(b.price));
 };
 

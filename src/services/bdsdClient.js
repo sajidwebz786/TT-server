@@ -473,12 +473,21 @@ export async function searchBdsdBuses(query) {
   return firstArray(data, ["BusResults", "BusResult", "Results", "Result", "data"]).map((item) => normalizeBusRoute(item, query, token));
 }
 
+const busCityLookupCache = new Map();
+
 async function findBusCityId(name) {
   if (!name) return null;
+  const cacheKey = String(name).trim().toLowerCase();
+  if (busCityLookupCache.has(cacheKey)) return busCityLookupCache.get(cacheKey);
   const city = await City.findOne({ where: { name } });
-  if (city?.externalBusCityId) return city;
+  if (city?.externalBusCityId) {
+    busCityLookupCache.set(cacheKey, city);
+    return city;
+  }
   const fallbackId = bdsdBusCityIds()[name];
-  return fallbackId ? { externalBusCityId: String(fallbackId) } : null;
+  const result = fallbackId ? { externalBusCityId: String(fallbackId) } : null;
+  busCityLookupCache.set(cacheKey, result);
+  return result;
 }
 
 export async function searchBdsdFlights(query) {
