@@ -89,63 +89,10 @@ export const seedDatabase = async () => {
     { name: "Cedar Palace Srinagar", city: "Kashmir", DestinationId: kashmir.id, starRating: 4, pricePerNight: 7499, imageUrl: "https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1200&q=80", amenities: ["Heated rooms", "Mountain view", "Shikara desk"], roomTypes: ["Premier", "Family"] }
   ]);
 
-  const now = new Date();
-  const addHours = (h) => new Date(now.getTime() + h * 60 * 60 * 1000);
-  const addDays = (d) => { const dt = new Date(now); dt.setDate(dt.getDate() + d); return dt; };
-  await TransportRoute.bulkCreate([
-    { type: "bus", providerName: "Orbita Travels Prime Bus", routeCode: "BUS-MUM-GOA-01", origin: "Mumbai", destination: "Goa", departureTime: addHours(8), arrivalTime: addHours(20), price: 1499, classType: "AC Sleeper", vehicleType: "Volvo Multi Axle", amenities: ["Live tracking", "Blanket", "Charging"], seatLayout: seatLayout(10, 4, true), cancellationPolicy: "Free cancellation up to 6 hours" },
-    { type: "bus", providerName: "BlueLine Express", routeCode: "BUS-MUM-GOA-02", origin: "Mumbai", destination: "Goa", departureTime: addHours(10), arrivalTime: addHours(22), price: 999, classType: "AC Seater", vehicleType: "Premium Coach", amenities: ["Water bottle", "Charging"], seatLayout: seatLayout(11, 4, false), cancellationPolicy: "Partial refund" },
-    { type: "flight", providerName: "Orbita Travels Air", routeCode: "FLT-DEL-GOA-01", origin: "Delhi", destination: "Goa", departureTime: addHours(6), arrivalTime: addHours(8.5), price: 6299, classType: "Economy", vehicleType: "A320", amenities: ["Cabin baggage", "Meal add-on"], baggage: "15kg check-in + 7kg cabin", seatLayout: seatLayout(18, 4, false), cancellationPolicy: "Airline rules apply" },
-    { type: "flight", providerName: "SkyVista", routeCode: "FLT-BLR-KER-01", origin: "Bengaluru", destination: "Kerala", departureTime: addHours(5), arrivalTime: addHours(6.2), price: 4299, classType: "Premium Economy", vehicleType: "B737", amenities: ["Priority boarding", "Extra legroom"], baggage: "20kg check-in + 7kg cabin", seatLayout: seatLayout(16, 4, false), cancellationPolicy: "Refundable fare" },
-    { type: "train", providerName: "Konkan Heritage", routeCode: "TRN-MUM-GOA-01", origin: "Mumbai", destination: "Goa", departureTime: addHours(12), arrivalTime: addHours(24), price: 1299, classType: "3AC", vehicleType: "Express", amenities: ["Pantry", "Bedding", "Window seats"], seatLayout: seatLayout(12, 4, true), cancellationPolicy: "Railway rules apply" },
-    { type: "train", providerName: "Northern Crown", routeCode: "TRN-DEL-KAS-01", origin: "Delhi", destination: "Kashmir", departureTime: addHours(15), arrivalTime: addHours(33), price: 2199, classType: "2AC", vehicleType: "Superfast", amenities: ["Bedding", "Meals", "Reading light"], seatLayout: seatLayout(10, 4, true), cancellationPolicy: "Railway rules apply" }
-  ]);
-
   const users = await User.bulkCreate([
     { name: "Admin", email: "admin@orbitatravels.com", phone: "9999999999", passwordHash: "admin123", role: "admin" },
     { name: "Demo Customer", email: "customer@orbitatravels.com", phone: "8888888888", passwordHash: "customer123", role: "customer" }
   ], { individualHooks: true });
-
-  const demo = users.find((user) => user.role === "customer");
-  const route = await TransportRoute.findOne({ where: { type: "bus" } });
-  const pastDate = new Date(now);
-  pastDate.setDate(pastDate.getDate() - 3);
-  const pastBooking = await route.createBooking({
-    bookingCode: "TT-BUS-PAST",
-    type: "bus",
-    UserId: demo.id,
-    travelDate: pastDate.toISOString().slice(0, 10),
-    passengers: [{ name: "Demo Customer", age: 30, gender: "Male", idType: "Aadhaar", idNumber: "XXXX-1234", seat: "A1" }],
-    selectedSeats: ["A1"],
-    contact: { email: demo.email, phone: demo.phone },
-    totalAmount: 1499,
-    paymentStatus: "paid",
-    status: "completed",
-    metadata: { origin: route.origin, destination: route.destination, boardingPoint: "Mumbai Central", dropPoint: "Panaji Bus Stand" }
-  });
-  await pastBooking.update({ UserId: demo.id });
-  const booking = await route.createBooking({
-    bookingCode: "TT-BUS-SAMPLE",
-    type: "bus",
-    UserId: demo.id,
-    travelDate: "2026-06-15",
-    passengers: [{ name: "Demo Customer", age: 30, gender: "Male", idType: "Aadhaar", idNumber: "XXXX-1234", seat: "A2" }],
-    selectedSeats: ["A2"],
-    contact: { email: demo.email, phone: demo.phone },
-    totalAmount: 1499,
-    paymentStatus: "paid",
-    metadata: { origin: route.origin, destination: route.destination, boardingPoint: "Mumbai Central", dropPoint: "Panaji Bus Stand" }
-  });
-  await booking.update({ UserId: demo.id });
-  await TrackingEvent.bulkCreate([
-    { BookingId: booking.id, latitude: 19.076, longitude: 72.8777, locationName: "Mumbai Central", status: "Boarding soon", etaMinutes: 0, speedKmph: 0 },
-    { BookingId: booking.id, latitude: 18.5204, longitude: 73.8567, locationName: "Pune bypass", status: "On schedule", etaMinutes: 420, speedKmph: 64 }
-  ]);
-  await SupportTicket.create({ UserId: demo.id, BookingId: booking.id, category: "boarding", priority: "normal", subject: "Boarding point clarification", message: "Please confirm the boarding point and reporting time." });
-  await ChatMessage.bulkCreate([
-    { UserId: demo.id, BookingId: booking.id, sender: "customer", message: "Can you help me with boarding details?", intent: "boarding" },
-    { UserId: demo.id, BookingId: booking.id, sender: "assistant", message: "Your boarding point is Mumbai Central. Please arrive 20 minutes before departure.", intent: "boarding" }
-  ]);
 
   console.log("Orbita Travels database seeded");
 };

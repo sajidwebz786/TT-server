@@ -9,7 +9,7 @@ import { bookingRouter } from "./routes/bookings.js";
 import { catalogRouter } from "./routes/catalog.js";
 import { transportRouter } from "./routes/transport.js";
 import { supportRouter } from "./routes/support.js";
-import { City } from "./models/index.js";
+import { Booking, ChatMessage, City, SupportTicket, TrackingEvent, TransportRoute } from "./models/index.js";
 import { errorResponse, wrapAsyncRoutes } from "./utils/asyncRoutes.js";
 
 dotenv.config();
@@ -58,5 +58,21 @@ if (cityCount === 0) {
   const { seedDatabase } = await import("./seed/index.js");
   await seedDatabase();
 }
+
+const sampleRouteCodes = ["BUS-MUM-GOA-01", "BUS-MUM-GOA-02", "FLT-DEL-GOA-01", "FLT-BLR-KER-01", "TRN-MUM-GOA-01", "TRN-DEL-KAS-01"];
+const sampleRoutes = await TransportRoute.findAll({ where: { routeCode: sampleRouteCodes }, attributes: ["id"] });
+const sampleRouteIds = sampleRoutes.map((route) => route.id);
+const sampleBookings = sampleRouteIds.length ? await Booking.findAll({ where: { TransportRouteId: sampleRouteIds }, attributes: ["id"] }) : [];
+const sampleBookingIds = sampleBookings.map((booking) => booking.id);
+if (sampleBookingIds.length) {
+  await Promise.all([
+    TrackingEvent.destroy({ where: { BookingId: sampleBookingIds } }),
+    SupportTicket.destroy({ where: { BookingId: sampleBookingIds } }),
+    ChatMessage.destroy({ where: { BookingId: sampleBookingIds } })
+  ]);
+  await Booking.destroy({ where: { id: sampleBookingIds } });
+}
+const removedSampleRoutes = sampleRouteIds.length ? await TransportRoute.destroy({ where: { id: sampleRouteIds } }) : 0;
+if (removedSampleRoutes) console.log(`Removed ${removedSampleRoutes} sample transport routes.`);
 
 app.listen(port, () => console.log(`Orbita Travels API running on http://localhost:${port}`));

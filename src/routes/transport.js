@@ -1,5 +1,4 @@
 import express from "express";
-import { Op } from "sequelize";
 import { TransportRoute } from "../models/index.js";
 import { bdsdClient, getBdsdBusBoardingPoints, getBdsdBusSeatLayout, searchBdsdBuses, searchBdsdFlights } from "../services/bdsdClient.js";
 
@@ -49,9 +48,7 @@ transportRouter.get("/:type/search", async (req, res) => {
     if (!pending) {
       pending = (async () => {
         const externalRoutes = await tryExternalSearch(() => searchBdsdBuses({ from: req.query.from, to: req.query.to, date: req.query.date }));
-        const routes = externalRoutes.length
-          ? await upsertExternalRoutes(externalRoutes)
-          : await findStoredRoutes(type, req.query);
+        const routes = externalRoutes.length ? await upsertExternalRoutes(externalRoutes) : [];
         writeSearchCache(key, routes);
         return routes;
       })();
@@ -73,13 +70,6 @@ transportRouter.get("/:type/search", async (req, res) => {
   }
   res.json([]);
 });
-
-const findStoredRoutes = async (type, query) => {
-  const where = { type };
-  if (query.from) where.origin = { [Op.iLike]: String(query.from) };
-  if (query.to) where.destination = { [Op.iLike]: String(query.to) };
-  return TransportRoute.findAll({ where, order: [["price", "ASC"]] });
-};
 
 transportRouter.get("/:type/:id/seats", async (req, res) => {
   const route = await TransportRoute.findOne({ where: { id: req.params.id, type: req.params.type } });

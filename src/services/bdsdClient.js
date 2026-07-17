@@ -33,6 +33,8 @@ const defaultHotelCityIds = {
   Goa: 113469
 };
 
+const canonicalCityName = (name) => String(name || "").trim().toLowerCase() === "bangalore" ? "Bengaluru" : String(name || "").trim();
+
 function configured() {
   return {
     enabled: enabled(),
@@ -67,7 +69,8 @@ function bdsdHotelCityIds() {
 
 function envProviderCities() {
   const byName = new Map();
-  const add = (name, fields) => {
+  const add = (rawName, fields) => {
+    const name = canonicalCityName(rawName);
     const current = byName.get(name) || {
       id: name,
       name,
@@ -101,14 +104,16 @@ function envProviderCities() {
 async function providerCities() {
   const cities = await City.findAll({ order: [["name", "ASC"]] });
   if (!cities.length) return envProviderCities();
-  return cities.map((city) => {
+  const canonicalCities = new Map();
+  cities.forEach((city) => {
+    const name = canonicalCityName(city.name);
     const modes = new Set(city.transportModes || []);
     if (city.externalBusCityId || city.hasLiveBusSearch) modes.add("bus");
     if (city.airportCode || city.hasLiveFlightSearch) modes.add("flight");
     if (city.externalHotelCityId || city.hasLiveHotelSearch) modes.add("hotel");
-    return {
+    const normalized = {
       id: city.id,
-      name: city.name,
+      name,
       state: city.state || "",
       country: city.country || "India",
       isInternational: Boolean(city.isInternational),
@@ -121,7 +126,19 @@ async function providerCities() {
       hasLiveFlightSearch: Boolean(city.airportCode || city.hasLiveFlightSearch),
       hasLiveHotelSearch: Boolean(city.externalHotelCityId || city.hasLiveHotelSearch)
     };
+    const existing = canonicalCities.get(name.toLowerCase());
+    canonicalCities.set(name.toLowerCase(), existing ? {
+      ...existing, ...normalized, id: existing.id,
+      externalBusCityId: existing.externalBusCityId || normalized.externalBusCityId,
+      airportCode: existing.airportCode || normalized.airportCode,
+      externalHotelCityId: existing.externalHotelCityId || normalized.externalHotelCityId,
+      transportModes: [...new Set([...existing.transportModes, ...normalized.transportModes])],
+      hasLiveBusSearch: existing.hasLiveBusSearch || normalized.hasLiveBusSearch,
+      hasLiveFlightSearch: existing.hasLiveFlightSearch || normalized.hasLiveFlightSearch,
+      hasLiveHotelSearch: existing.hasLiveHotelSearch || normalized.hasLiveHotelSearch
+    } : normalized);
   });
+  return [...canonicalCities.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function headers() {
@@ -485,14 +502,17 @@ const busCityLookupCache = new Map();
 
 async function findBusCityId(name) {
   if (!name) return null;
-  const cacheKey = String(name).trim().toLowerCase();
+  const canonicalName = canonicalCityName(name);
+  const cacheKey = canonicalName.toLowerCase();
   if (busCityLookupCache.has(cacheKey)) return busCityLookupCache.get(cacheKey);
-  const city = await City.findOne({ where: { name } });
+  let city = await City.findOne({ where: { name: canonicalName } });
+  if (!city?.externalBusCityId && canonicalName === "Bengaluru") city = await City.findOne({ where: { name: "Bangalore" } });
   if (city?.externalBusCityId) {
     busCityLookupCache.set(cacheKey, city);
     return city;
   }
-  const fallbackId = bdsdBusCityIds()[name];
+  const cityIds = bdsdBusCityIds();
+  const fallbackId = cityIds[canonicalName] || (canonicalName === "Bengaluru" ? cityIds.Bangalore : null);
   const result = fallbackId ? { externalBusCityId: String(fallbackId) } : null;
   busCityLookupCache.set(cacheKey, result);
   return result;
