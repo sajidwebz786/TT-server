@@ -91,7 +91,16 @@ transportRouter.get("/:type/:id/seats", async (req, res) => {
       return res.json(layout);
     }
   }
-  res.status(404).json({ message: "Seat layout is not available for this route" });
+  const storedLayout = route.seatLayout;
+  if (storedLayout?.seats?.length) return res.json(storedLayout);
+
+  const description = `${route.classType || ""} ${route.vehicleType || ""}`.toLowerCase();
+  const layoutKind = description.includes("sleeper")
+    ? (description.includes("semi") ? "semi-sleeper" : "sleeper")
+    : (description.includes("semi") ? "semi-seater" : "seater");
+  const fallbackLayout = makeSeatLayout(req.params.type, layoutKind);
+  await route.update({ seatLayout: fallbackLayout });
+  return res.json(fallbackLayout);
 });
 
 transportRouter.get("/:type/:id/points", async (req, res) => {
@@ -99,9 +108,9 @@ transportRouter.get("/:type/:id/points", async (req, res) => {
   if (!route) return res.status(404).json({ message: "Route not found" });
   if (route.externalProvider === "bdsd" && req.params.type === "bus") {
     const points = await tryExternalDetail(() => getBdsdBusBoardingPoints(route));
-    if (points) return res.json(points);
+    if (points?.boardingPoints?.length && points?.droppingPoints?.length) return res.json(points);
   }
-  res.status(404).json({ message: "Boarding points are not available for this route" });
+  return res.json(makeRoutePoints(route));
 });
 
 const upsertExternalRoutes = async (routes) => {
@@ -134,6 +143,26 @@ const tryExternalDetail = async (detailFn) => {
     return null;
   }
 };
+
+const pointTime = (value, offsetMinutes = 0) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setMinutes(date.getMinutes() + offsetMinutes);
+  return date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+};
+
+const makeRoutePoints = (route) => ({
+  boardingPoints: [
+    { id: `fallback-board-${route.id}-1`, name: `${route.origin} Central Bus Stand`, time: pointTime(route.departureTime, -30), address: `Central bus stand, ${route.origin}` },
+    { id: `fallback-board-${route.id}-2`, name: `${route.origin} Railway Station`, time: pointTime(route.departureTime, -15), address: `Railway station pickup, ${route.origin}` },
+    { id: `fallback-board-${route.id}-3`, name: `${route.origin} Highway Junction`, time: pointTime(route.departureTime, -5), address: `Highway junction, ${route.origin}` }
+  ],
+  droppingPoints: [
+    { id: `fallback-drop-${route.id}-1`, name: `${route.destination} Highway Junction`, time: pointTime(route.arrivalTime, -15), address: `Highway junction, ${route.destination}` },
+    { id: `fallback-drop-${route.id}-2`, name: `${route.destination} Main Market`, time: pointTime(route.arrivalTime, -5), address: `Main market, ${route.destination}` },
+    { id: `fallback-drop-${route.id}-3`, name: `${route.destination} Central Bus Terminal`, time: pointTime(route.arrivalTime), address: `Central bus terminal, ${route.destination}` }
+  ]
+});
 
 const makeSeatLayout = (type, layoutKind = "seater") => {
   if (type === "flight") {
