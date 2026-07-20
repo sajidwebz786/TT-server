@@ -15,20 +15,26 @@ import { errorResponse, wrapAsyncRoutes } from "./utils/asyncRoutes.js";
 dotenv.config();
 
 const app = express();
-const defaultOrigins = ["https://orbita.co.in", "https://www.orbita.co.in"];
-const envOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL, process.env.FRONTEND_URL]
-  .filter(Boolean)
-  .join(",")
-  .split(",")
-  .map(url => url.trim())
-  .filter(Boolean);
-const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
+// const defaultOrigins = ["https://orbita.co.in", "https://www.orbita.co.in"];
+// const envOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL, process.env.FRONTEND_URL]
+//   .filter(Boolean)
+//   .join(",")
+//   .split(",")
+//   .map(url => url.trim())
+//   .filter(Boolean);
+// const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
+
+// app.use(cors({
+//   origin: allowedOrigins.length ? allowedOrigins : true,
+//   credentials: true
+// }));
+// app.use(express.json());
 
 app.use(cors({
-  origin: allowedOrigins.length ? allowedOrigins : true,
-  credentials: true
+  origin: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
-app.use(express.json());
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok", name: "Orbita Travels API" }));
 app.use("/api/auth", wrapAsyncRoutes(authRouter));
