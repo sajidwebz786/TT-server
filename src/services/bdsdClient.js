@@ -2,11 +2,13 @@ import { City } from "../models/index.js";
 
 const baseUrl = () => (process.env.BDSD_API_URL || "").replace(/\/+$/, "");
 const enabled = () => process.env.BDSD_ENABLED === "true" && Boolean(baseUrl());
-const userIp = () => process.env.BDSD_USER_IP || "103.209.223.52";
+const userIp = () => process.env.BDSD_USER_IP || "122.168.67.189";
 
 const defaultBusCityIds = {
   Mumbai: "8463",
-  Goa: "9573"
+  Goa: "9573",
+  Kadapa: "3390",
+  Hyderabad: "7485"
 };
 
 const defaultAirportCodes = {
@@ -104,13 +106,19 @@ function envProviderCities() {
 async function providerCities() {
   const cities = await City.findAll({ order: [["name", "ASC"]] });
   if (!cities.length) return envProviderCities();
+  const configuredBusIds = bdsdBusCityIds();
+  const configuredAirportCodes = bdsdAirportCodes();
+  const configuredHotelIds = bdsdHotelCityIds();
   const canonicalCities = new Map();
   cities.forEach((city) => {
     const name = canonicalCityName(city.name);
+    const externalBusCityId = city.externalBusCityId || configuredBusIds[name] || (name === "Bengaluru" ? configuredBusIds.Bangalore : null);
+    const airportCode = city.airportCode || configuredAirportCodes[name];
+    const externalHotelCityId = city.externalHotelCityId || configuredHotelIds[name];
     const modes = new Set(city.transportModes || []);
-    if (city.externalBusCityId || city.hasLiveBusSearch) modes.add("bus");
-    if (city.airportCode || city.hasLiveFlightSearch) modes.add("flight");
-    if (city.externalHotelCityId || city.hasLiveHotelSearch) modes.add("hotel");
+    if (externalBusCityId || city.hasLiveBusSearch) modes.add("bus");
+    if (airportCode || city.hasLiveFlightSearch) modes.add("flight");
+    if (externalHotelCityId || city.hasLiveHotelSearch) modes.add("hotel");
     const normalized = {
       id: city.id,
       name,
@@ -119,12 +127,12 @@ async function providerCities() {
       isInternational: Boolean(city.isInternational),
       transportModes: [...modes],
       externalProvider: city.externalProvider,
-      externalBusCityId: city.externalBusCityId,
-      airportCode: city.airportCode,
-      externalHotelCityId: city.externalHotelCityId,
-      hasLiveBusSearch: Boolean(city.externalBusCityId || city.hasLiveBusSearch),
-      hasLiveFlightSearch: Boolean(city.airportCode || city.hasLiveFlightSearch),
-      hasLiveHotelSearch: Boolean(city.externalHotelCityId || city.hasLiveHotelSearch)
+      externalBusCityId,
+      airportCode,
+      externalHotelCityId,
+      hasLiveBusSearch: Boolean(externalBusCityId || city.hasLiveBusSearch),
+      hasLiveFlightSearch: Boolean(airportCode || city.hasLiveFlightSearch),
+      hasLiveHotelSearch: Boolean(externalHotelCityId || city.hasLiveHotelSearch)
     };
     const existing = canonicalCities.get(name.toLowerCase());
     canonicalCities.set(name.toLowerCase(), existing ? {
@@ -137,6 +145,9 @@ async function providerCities() {
       hasLiveFlightSearch: existing.hasLiveFlightSearch || normalized.hasLiveFlightSearch,
       hasLiveHotelSearch: existing.hasLiveHotelSearch || normalized.hasLiveHotelSearch
     } : normalized);
+  });
+  envProviderCities().forEach((city) => {
+    if (!canonicalCities.has(city.name.toLowerCase())) canonicalCities.set(city.name.toLowerCase(), city);
   });
   return [...canonicalCities.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -151,6 +162,7 @@ function headers() {
 
 async function request(path, body) {
   if (!enabled()) return null;
+  const startedAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(process.env.BDSD_TIMEOUT_MS || 20000));
   const response = await fetch(`${baseUrl()}${path}`, {
@@ -159,7 +171,14 @@ async function request(path, body) {
     body: JSON.stringify(body),
     signal: controller.signal
   }).catch((error) => {
-    if (error.name === "AbortError") throw new Error(`BDSD request timed out for ${path}`);
+    if (error.name === "AbortError") {
+      const timeoutError = new Error(`BDSD request timed out for ${path}`);
+      timeoutError.status = 502;
+      timeoutError.publicMessage = "The live travel provider timed out. Please try the search again.";
+      throw timeoutError;
+    }
+    error.status = 502;
+    error.publicMessage = "The live travel provider could not be reached. Please try again.";
     throw error;
   });
   try {
@@ -167,8 +186,12 @@ async function request(path, body) {
     const data = text ? tryJson(text) : {};
     if (!response.ok || data?.Error?.ErrorCode) {
       const message = data?.Error?.ErrorMessage || data?.message || `BDSD request failed with ${response.status}`;
-      throw new Error(message);
+      const error = new Error(message);
+      error.status = 502;
+      error.publicMessage = `The live travel provider rejected the search: ${message}`;
+      throw error;
     }
+    console.info("BDSD request succeeded", { path, status: response.status, durationMs: Date.now() - startedAt });
     return data;
   } finally {
     clearTimeout(timeout);
@@ -487,7 +510,10 @@ export async function searchBdsdBuses(query) {
   ]);
   const originId = origin?.externalBusCityId;
   const destinationId = destination?.externalBusCityId;
-  if (!enabled() || !originId || !destinationId) return [];
+  if (!enabled()) return [];
+  if (!originId || !destinationId) {
+    throw new Error(`Live bus search is not configured for ${!originId ? query.from : query.to}. Refresh the BDSD city mapping and try again.`);
+  }
   const data = await request(process.env.BDSD_BUS_SEARCH_PATH || "/busservice/rest/search", {
     UserIp: userIp(),
     DateOfJourney: query.date,

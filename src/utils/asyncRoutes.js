@@ -47,6 +47,8 @@ export function errorResponse(error, _req, res, _next) {
   }
 
   const status = Number(error.status || error.statusCode) || 500;
-  const safeMessage = status >= 500 ? "Something went wrong. Please try again in a moment." : error.message;
+  const safeMessage = status >= 500
+    ? (error.publicMessage || "Something went wrong. Please try again in a moment.")
+    : error.message;
   res.status(status).json({ message: safeMessage });
 }

@@ -47,9 +47,14 @@ transportRouter.get("/:type/search", async (req, res) => {
     let pending = pendingSearches.get(key);
     if (!pending) {
       pending = (async () => {
-        const externalRoutes = await tryExternalSearch(() => searchBdsdBuses({ from: req.query.from, to: req.query.to, date: req.query.date }));
+        const externalRoutes = await searchBdsdBuses({ from: req.query.from, to: req.query.to, date: req.query.date });
         const routes = externalRoutes.length ? await upsertExternalRoutes(externalRoutes) : [];
-        writeSearchCache(key, routes);
+        if (routes.length) writeSearchCache(key, routes);
+        else console.warn("BDSD bus search returned no routes", {
+          from: req.query.from,
+          to: req.query.to,
+          date: req.query.date
+        });
         return routes;
       })();
       pendingSearches.set(key, pending);

@@ -35,6 +35,7 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
+app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok", name: "Orbita Travels API" }));
 app.use("/api/auth", wrapAsyncRoutes(authRouter));
